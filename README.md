@@ -1,6 +1,12 @@
 # FarmAs: Your AI Farm Companion
 
-**Live app:** https://farmas-six.vercel.app (on the login page, tap **Use demo account**)
+> Talk to your farm the way you talk. FarmAs turns everyday English and Nigerian Pidgin into farm records, answers
+> your questions, checks animal health and warns you early when something looks wrong.
+
+**Live app:** https://farmas-six.vercel.app
+On the login page, tap **Use demo account** to explore a ready-made farm (Dons Farm, Kaduna State).
+
+---
 
 ## Team
 
@@ -10,65 +16,88 @@
 
 - Oladepo Oluwaseyi Glory
 - Muhammed Awwal Mumeenat
-- Philips Edun
+- Philips Olorunwa Edun
 - Borokinni Yusuf Temitope
+
+---
+
+## The problem
+
+Most small and medium livestock farmers in Nigeria keep their records in their heads or in a notebook. They do not
+know their real profit, they spot a disease outbreak only when animals are already dying, and apps that ask for long
+forms get abandoned. Farmers think and speak in English and Pidgin, not in spreadsheets.
 
 ## Our solution
 
-Most small and medium livestock farmers in Nigeria keep their records in their heads or in a notebook. They do not
-know their real profit, they notice a disease outbreak when it is already too late, and apps that ask them to fill in
-long forms get abandoned.
+**FarmAs lets a farmer simply talk to their farm.** They tell FarmAs AI what happened, by typing or by voice, and
+FarmAs does the paperwork: it records the sale, updates the animal count, tracks the money and flags danger.
 
-**FarmAs lets a farmer simply talk to their farm.** They tell FarmAs AI what happened, in English or Nigerian Pidgin,
-by typing or by voice. FarmAs turns it into a proper farm record, answers questions from the farmer's own data, checks
-animal health, and warns early when something looks wrong.
-
-> "I don sell 20 birds for 75k" → FarmAs asks "Should I save this?" → the farmer says yes → the sale is in the records,
+> "I don sell 20 birds for 75k" → FarmAs asks "Should I save this?" → the farmer says yes → the sale is recorded,
 > the animal count goes down and Finance updates.
 
-### What it does
+FarmAs AI has two modes on one screen:
 
-- **Agent mode: talk to record.** Sales, purchases, expenses, feed, deaths and health problems are understood from
-  plain messages. Nothing is saved until the farmer confirms. Dead animals leave the available count automatically.
-- **Chatbot mode: ask anything.** General questions about animal care, feeding and diseases are answered from a
-  veterinary knowledge base, in simple English or Pidgin. It never changes the farm records.
-- **Nearest vet.** When a farmer asks for a vet, the app uses their phone's location (only if they allow it) to list
-  the closest clinics from OpenStreetMap, with call and directions buttons.
-- **Voice notes.** Record, see the words, fix anything wrong, then send.
-- **Conversation history.** Past chats are saved per farm and can be reopened, and the AI remembers recent messages.
-- **Health risk check.** Describe symptoms (and add a photo) to get a risk level, possible concerns and safe next
-  steps. A rule-based safety floor can raise the risk, never lower it, and it always says a vet must confirm.
-- **Inventory, finance and early warnings.** Live animal counts with a history of every change, revenue, expenses and
-  profit, a mortality alert, task reminders, and a table of recent activity.
-- **Pidgin or English**, chosen automatically or by the farmer.
+| Mode | What it does |
+|---|---|
+| **Agent** | Understands what the farmer says and records it: sales, purchases, expenses, feed, deaths, lost animals and health problems. It always asks before saving, so a misheard number never changes the records. |
+| **Chatbot** | Answers questions about animal care, feeding and disease from a veterinary knowledge base, and helps find the nearest vet. It never changes the records. |
 
-### Built with
+### Features
 
-Next.js and React (website), Node, Express, Prisma and PostgreSQL on Neon (API), Python and FastAPI with OpenAI
-(AI service), deployed on Vercel and Render.
+- **Talk to record** in English or Nigerian Pidgin, with a switch to choose the reply language (Auto, English or Pidgin).
+- **Voice notes**: record, check the written words, fix anything wrong, then send.
+- **Conversation history**: past chats are saved and can be reopened. The AI remembers recent messages, so follow-up
+  questions make sense.
+- **Inventory**: live animal counts by type, with a history of every change (bought, sold, died, lost, added).
+  Deaths reported to the AI come off the count automatically.
+- **Health risk check**: describe symptoms (and add a photo) to get a risk level, possible concerns and safe next steps.
+  A rule-based safety floor can raise the risk but never lower it, and every result says a vet must confirm.
+- **Early warnings**: a mortality alert for recent deaths, health alerts, and task reminders such as vaccinations.
+- **Finance**: revenue, expenses, profit and an expense breakdown, built from what the farmer tells the AI.
+- **Dashboard**: a recent-activity table of sales, expenses, purchases and deaths.
+- **Nearest vet**: with the farmer's permission, the app uses the phone's location to list nearby clinics, with call and
+  directions buttons and a Google Maps search.
 
-## How it fits together
+### Why it is safe to trust
+
+- Nothing is recorded without the farmer's explicit yes.
+- Answers about the farm come from stored records. FarmAs never invents numbers.
+- Health output is decision support, not a diagnosis: no definite diagnoses, no drug doses, always a vet disclaimer.
+- One farmer can never see or change another farmer's farm.
+- Location and microphone are used only when the farmer taps the button and allows it. Location is not stored.
+
+---
+
+## How it works
 
 ```
-frontend/    Next.js app: landing page, sign up, onboarding, dashboard, AI chat, inventory, health, tasks
-api/         Node + Express + Postgres (Prisma): login, farms, records, confirm-before-save, chat history, WhatsApp webhook
-ai-service/  Python + FastAPI + OpenAI: understands messages, answers questions, assesses health, transcribes voice
-docs/        API reference and contract notes
+Browser (Next.js, Vercel) ──► API (Node + Express + Prisma, Render) ──► AI service (FastAPI + OpenAI, Render)
+                                        │
+                                        └──► PostgreSQL (Neon)
 ```
 
-The browser talks only to `api/`. The AI key lives only in `ai-service/` (and the root `.env`). Nothing is saved
-to the database until the farmer confirms. Details: [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md),
-[`api/docs/API.md`](api/docs/API.md), [`ai-service/README.md`](ai-service/README.md).
+| Folder | What it is |
+|---|---|
+| `frontend/` | Next.js website and app: landing page, sign up, onboarding, dashboard, AI chat, inventory, finance, health, tasks |
+| `api/` | Node + Express + PostgreSQL (Prisma): login, farms, records, confirm-before-save, chat history, inventory |
+| `ai-service/` | Python + FastAPI + OpenAI: understands messages, answers questions, assesses health, transcribes voice |
+| `docs/` | API reference, API contract and the deployment guide |
 
-Glory's first prototype (`backend/`, `chatbot/`, `chat_ui/`, `knowledge/`) is superseded: its knowledge base now
-lives in `ai-service/knowledge/`, and the old folders are not needed.
+The browser talks only to the API. The AI key lives only in the AI service, which also refuses requests that do not
+carry the API's internal key. More detail: [`api/docs/API.md`](api/docs/API.md),
+[`docs/API_CONTRACT.md`](docs/API_CONTRACT.md), [`ai-service/README.md`](ai-service/README.md).
 
-## First-time setup
+**Built with:** Next.js 16, React 19, TypeScript, Tailwind CSS · Node, Express 5, Prisma, PostgreSQL (Neon) · Python,
+FastAPI, OpenAI · Vercel and Render.
 
-You need Node 20+, Python 3.11+, and a PostgreSQL database (a free Neon or Supabase project works).
+---
 
-1. **Secrets**: copy each example and fill it in. Never commit the real files (they are git-ignored).
-   - Root `.env`: `OPENAI_API_KEY` and `OPENAI_MODEL` (see `.env.example`)
+## Run it locally
+
+You need Node 20+, Python 3.11+ and a PostgreSQL database (a free Neon project works).
+
+1. **Secrets.** Copy each example file and fill it in. The real files are git-ignored and must never be committed.
+   - Root `.env`: `OPENAI_API_KEY`, `OPENAI_MODEL` (see `.env.example`)
    - `api/.env`: from `api/.env.example` (`DATABASE_URL`, `JWT_SECRET`, `MODEL_SERVICE_INTERNAL_KEY`, ...)
    - `ai-service/.env`: `MODEL_SERVICE_INTERNAL_KEY=` (the same value as in `api/.env`)
    - `frontend/.env.local`: from `frontend/.env.local.example`
@@ -77,7 +106,7 @@ You need Node 20+, Python 3.11+, and a PostgreSQL database (a free Neon or Supab
    cd api
    npm install
    npx prisma migrate deploy
-   npm run db:seed            # demo farm: don@donsfarm.ng / password123 (local demos only)
+   npm run db:seed        # creates the demo farm: don@donsfarm.ng / password123
    ```
 3. **AI service**
    ```
@@ -85,9 +114,9 @@ You need Node 20+, Python 3.11+, and a PostgreSQL database (a free Neon or Supab
    python -m venv .venv
    .venv\Scripts\pip install -r requirements.txt
    ```
-4. **Frontend**: `cd frontend && npm install`
+4. **Frontend:** `cd frontend && npm install`
 
-## Run (three terminals)
+Then start the three parts:
 
 | What | Command | Port |
 |---|---|---|
@@ -95,46 +124,30 @@ You need Node 20+, Python 3.11+, and a PostgreSQL database (a free Neon or Supab
 | API | `cd api && npm run dev` | 4000 |
 | Frontend | `cd frontend && npm run dev -- --webpack` | 3000 |
 
-Open http://localhost:3000. On the login page, **Use demo account** signs in as the seeded demo farmer.
-(The frontend only needs `NEXT_PUBLIC_API_URL`; without it the app runs on built-in sample data.)
+Open http://localhost:3000 and tap **Use demo account**. Without `NEXT_PUBLIC_API_URL`, the frontend runs on built-in
+sample data.
 
-## Deploy
+## Deployment
 
-Step-by-step guide (GitHub, Neon database, Render for the API and AI service, Vercel for the website):
+The app runs on Vercel (website), Render (API and AI service) and Neon (database). Step by step:
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-Render's free plan puts a service to sleep after 15 minutes without visitors. The workflow in
-`.github/workflows/keep-alive.yml` pings both services every 10 minutes to keep them awake. GitHub can run it a few
-minutes late, so open the app a minute before a live demo.
+Render's free plan puts a service to sleep after 15 minutes without visitors, so the first request after a quiet
+spell can take up to a minute. A GitHub workflow (`.github/workflows/keep-alive.yml`) pings both services every
+10 minutes to keep them awake.
 
 ## Tests
 
 ```
-cd ai-service && .venv\Scripts\python -m pytest -q       # 40 offline tests, no key needed
+cd ai-service && .venv\Scripts\python -m pytest -q       # 40 offline tests, no API key needed
 cd api && npm run typecheck
 cd frontend && npx tsc --noEmit && npx eslint src
 ```
 
-## Safety rules the code follows
+## What we would build next
 
-- Public deployment is locked down: the AI service refuses to run without its internal key, the API refuses weak
-  secrets, logins and chat are rate limited, and WhatsApp calls must carry Meta's signature.
-- Git hooks (`.githooks/`, turn on with `git config core.hooksPath .githooks`) block commits that contain `.env`
-  files, secret keys, or an AI tool listed as co-author.
-- Never invent farm data or financial figures: answers come from stored records.
-- Nothing is recorded without the farmer's explicit yes.
-- Health output is decision support, never a diagnosis: no definite diagnoses, no drug doses, always a vet
-  disclaimer, and a rule-based safety floor can only raise the risk the AI reports.
-- The nearest-vet list only shows clinics found in map data. It never invents one.
-- Location and microphone are only used when the farmer taps the button and allows it. Location is not stored.
-- One farmer can never read or change another farmer's farm.
-
-## Known limits
-
-- **The AI needs credit on the OpenAI account.** If it runs out, the app says the AI is unavailable and nothing is
-  saved or invented. Keep an eye on the balance before a live demo.
-- Voice transcription works, but has only been tested on synthetic speech, not yet on real Pidgin recordings.
-- Vet clinics come from OpenStreetMap, which has few clinics tagged in some Nigerian areas. A Google Maps search
-  button is always offered as well.
-- WhatsApp is not connected yet (the webhook code is ready and checks Meta's signature).
-- The login token is kept in `localStorage`. Move it to an httpOnly cookie before a public launch.
+- Connect WhatsApp so farmers can talk to FarmAs from the app they already use (the webhook is built and checks
+  Meta's signature).
+- A richer vet directory using Google Places, for more complete clinic names and phone numbers.
+- Anomaly detection that spots unusual patterns in feed, mortality and sales before a farmer notices.
+- Move the login token into a secure cookie for a public launch.
