@@ -1,0 +1,60 @@
+# Render "Blueprint": creates both back-end services from this one file.
+# Render dashboard -> New -> Blueprint -> pick this repository. It then asks you to fill in the values marked
+# "sync: false" (secrets and addresses): those are never stored in the repository.
+#
+# Prices and free-tier limits change: check Render's pricing page. Free services go to sleep when idle.
+
+services:
+  # ---------------------------------------------------------------- the AI service (Python)
+  - type: web
+    name: farmas-ai
+    runtime: python
+    rootDir: ai-service
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: AI_SERVICE_ENV
+        value: production
+      - key: OPENAI_MODEL
+        value: gpt-6-luna
+      # Your OpenAI key. You type this in the Render dashboard.
+      - key: OPENAI_API_KEY
+        sync: false
+      # Random password shared with the API. Render generates it once; the API reads the same value below.
+      - key: MODEL_SERVICE_INTERNAL_KEY
+        generateValue: true
+
+  # ---------------------------------------------------------------- the API (Node)
+  - type: web
+    name: farmas-api
+    runtime: node
+    rootDir: api
+    plan: free
+    # --include=dev: the build tools (TypeScript, Prisma) are development packages.
+    buildCommand: npm ci --include=dev && npm run build
+    # Applies any new database changes, then starts the server.
+    startCommand: npx prisma migrate deploy && npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Random secret that signs login tokens.
+      - key: JWT_SECRET
+        generateValue: true
+      # Same value as the AI service's key: read straight from it.
+      - key: MODEL_SERVICE_INTERNAL_KEY
+        fromService:
+          type: web
+          name: farmas-ai
+          envVarKey: MODEL_SERVICE_INTERNAL_KEY
+      # The AI service's public address, for example https://farmas-ai.onrender.com
+      - key: MODEL_SERVICE_URL
+        sync: false
+      # Your Neon connection string (keep ?sslmode=require).
+      - key: DATABASE_URL
+        sync: false
+      # Your website's address, for example https://farmas.vercel.app (https, no trailing slash).
+      - key: FRONTEND_ORIGIN
+        sync: false

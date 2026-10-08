@@ -1,0 +1,318 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  FARMER
+  ADMIN
+}
+
+enum LivestockType {
+  POULTRY
+  GOAT
+  SHEEP
+  CATTLE
+  PIG
+  RABBIT
+  FISH
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum LivestockStatus {
+  ACTIVE
+  SOLD
+  DECEASED
+}
+
+enum BatchStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum VaccinationStatus {
+  PENDING
+  COMPLETED
+}
+
+enum TaskCategory {
+  VACCINATION
+  MEDICATION
+  FEEDING
+  CLEANING
+  VET_VISIT
+  SALES
+  GENERAL
+}
+
+enum TaskStatus {
+  PENDING
+  DONE
+}
+
+enum AlertSeverity {
+  INFO
+  LOW_RISK
+  WARNING
+  CRITICAL
+}
+
+enum AlertStatus {
+  ACTIVE
+  RESOLVED
+}
+
+enum Channel {
+  APP
+  WHATSAPP
+}
+
+enum ConfirmationStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  EXECUTED
+}
+
+model User {
+  id            String            @id @default(cuid())
+  name          String
+  email         String            @unique
+  phone         String            @unique
+  passwordHash  String
+  role          Role              @default(FARMER)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  farms         Farm[]
+  conversations AiConversation[]
+
+  @@index([role])
+}
+
+model Farm {
+  id            String           @id @default(cuid())
+  ownerId       String
+  name          String
+  location      String?
+  farmType      String?
+  size          String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  owner         User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  livestock     Livestock[]
+  batches       Batch[]
+  expenses      Expense[]
+  sales         Sale[]
+  feedRecords   FeedRecord[]
+  healthRecords HealthRecord[]
+  vaccinations  Vaccination[]
+  tasks         Task[]
+  alerts        Alert[]
+  conversations AiConversation[]
+  actionLogs    AiActionLog[]
+
+  @@index([ownerId])
+}
+
+model Livestock {
+  id        String           @id @default(cuid())
+  farmId    String
+  type      LivestockType
+  breed     String?
+  quantity  Int              @default(0)
+  age       String?
+  gender    Gender?
+  status    LivestockStatus  @default(ACTIVE)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  farm      Farm             @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, status])
+  @@index([farmId, type])
+}
+
+model Batch {
+  id            String       @id @default(cuid())
+  farmId        String
+  livestockType LivestockType
+  name          String
+  quantity      Int
+  purchaseDate  DateTime     @default(now())
+  purchaseCost  Decimal      @default(0) @db.Decimal(14, 2)
+  status        BatchStatus  @default(ACTIVE)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  farm          Farm         @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  expenses      Expense[]
+  sales         Sale[]
+  feedRecords   FeedRecord[]
+  healthRecords HealthRecord[]
+  vaccinations  Vaccination[]
+
+  @@index([farmId, status])
+  @@index([farmId, livestockType])
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  farmId      String
+  batchId     String?
+  category    String
+  amount      Decimal  @db.Decimal(14, 2)
+  currency    String   @default("NGN")
+  description String?
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  farm        Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  batch       Batch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([farmId, date])
+  @@index([farmId, category])
+}
+
+model Sale {
+  id            String         @id @default(cuid())
+  farmId        String
+  batchId       String?
+  livestockType LivestockType
+  quantity      Int
+  amount        Decimal        @db.Decimal(14, 2)
+  buyer         String?
+  date          DateTime       @default(now())
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  farm          Farm           @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  batch         Batch?         @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([farmId, date])
+  @@index([farmId, livestockType])
+}
+
+model FeedRecord {
+  id        String   @id @default(cuid())
+  farmId    String
+  batchId   String?
+  feedType  String
+  quantity  Float
+  cost      Decimal  @default(0) @db.Decimal(14, 2)
+  date      DateTime @default(now())
+  farm      Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  batch     Batch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([farmId, date])
+}
+
+model HealthRecord {
+  id             String    @id @default(cuid())
+  farmId         String
+  batchId        String?
+  symptoms       String
+  observations   String?
+  numberAffected Int       @default(1)
+  mortality      Int       @default(0)
+  riskLevel      RiskLevel @default(MEDIUM)
+  aiAssessment   String    @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  farm           Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  batch          Batch?    @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([farmId, createdAt])
+  @@index([farmId, riskLevel])
+}
+
+model Vaccination {
+  id        String             @id @default(cuid())
+  farmId    String
+  batchId   String?
+  vaccine   String
+  date      DateTime           @default(now())
+  status    VaccinationStatus  @default(PENDING)
+  notes     String?
+  farm      Farm               @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  batch     Batch?             @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([farmId, status])
+  @@index([farmId, date])
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  farmId      String
+  title       String
+  description String?
+  dueDate     DateTime
+  category    TaskCategory @default(GENERAL)
+  status      TaskStatus   @default(PENDING)
+  farm        Farm         @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, status])
+  @@index([farmId, dueDate])
+}
+
+model Alert {
+  id          String        @id @default(cuid())
+  farmId      String
+  type        String
+  severity    AlertSeverity @default(INFO)
+  title       String
+  description String?
+  status      AlertStatus   @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  farm        Farm          @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, status])
+  @@index([farmId, severity])
+}
+
+model AiConversation {
+  id        String   @id @default(cuid())
+  userId    String
+  farmId    String?
+  channel   Channel  @default(APP)
+  message   String
+  response  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  farm      Farm?    @relation(fields: [farmId], references: [id], onDelete: SetNull)
+
+  @@index([farmId, createdAt])
+  @@index([userId, createdAt])
+  @@map("AIConversation")
+}
+
+model AiActionLog {
+  id                 String            @id @default(cuid())
+  farmId             String
+  rawInput           String
+  detectedIntent     String
+  extractedEntities  Json
+  confidence         Float
+  actionTaken        String
+  confirmationStatus ConfirmationStatus @default(PENDING)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  farm               Farm              @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, confirmationStatus])
+  @@index([farmId, createdAt])
+  @@map("AIActionLog")
+}

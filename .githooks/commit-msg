@@ -1,0 +1,16 @@
+#!/bin/sh
+# Blocks commit messages that credit an AI tool as author or co-author (for example a
+# "Co-Authored-By: ... <noreply@anthropic.com>" line). Anything else is allowed.
+
+msg_file="$1"
+
+if grep -qiE '^[[:space:]]*(co-authored-by|authored-by|generated[- ]by|made[- ]with)[^\n]*(claude|anthropic|chatgpt|openai|copilot|gemini)' "$msg_file" ||
+   grep -qiE 'noreply@anthropic\.com|generated with \[?claude' "$msg_file"; then
+  echo "" >&2
+  echo "COMMIT BLOCKED: the message credits an AI tool as co-author or author." >&2
+  echo "Remove that line from the message and commit again." >&2
+  echo "" >&2
+  exit 1
+fi
+
+exit 0

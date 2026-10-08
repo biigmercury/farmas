@@ -1,0 +1,33 @@
+#!/bin/sh
+# Stops secrets from being committed. Two checks on exactly what is staged:
+#   1. no real .env files (only *.example files are allowed)
+#   2. no key-shaped strings (OpenAI sk-..., Google AIza..., Groq gsk_..., private keys)
+
+staged="$(git diff --cached --name-only --diff-filter=ACM)"
+[ -z "$staged" ] && exit 0
+
+bad_files="$(printf '%s\n' "$staged" | grep -E '(^|/)\.env($|\.)' | grep -vE '\.example$')"
+if [ -n "$bad_files" ]; then
+  echo "" >&2
+  echo "COMMIT BLOCKED: these look like secret environment files:" >&2
+  printf '  %s\n' $bad_files >&2
+  echo "Unstage them with:  git restore --staged <file>   and make sure .gitignore lists them." >&2
+  echo "" >&2
+  exit 1
+fi
+
+# Look only at lines being added, and skip lock files and binaries.
+hits="$(git diff --cached -U0 --no-color -- . ':(exclude)*package-lock.json' ':(exclude)*.lock' \
+  | grep -E '^\+[^+]' \
+  | grep -E 'sk-(proj-)?[A-Za-z0-9_-]{30,}|AIza[0-9A-Za-z_-]{30,}|gsk_[A-Za-z0-9]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' \
+  | sed -E 's/(sk-proj-|sk-|AIza|gsk_)[A-Za-z0-9_-]+/\1<hidden>/' | head -5)"
+if [ -n "$hits" ]; then
+  echo "" >&2
+  echo "COMMIT BLOCKED: something that looks like a secret key is in the changes:" >&2
+  printf '  %s\n' "$hits" >&2
+  echo "Remove it (keep keys only in .env files) and commit again." >&2
+  echo "" >&2
+  exit 1
+fi
+
+exit 0

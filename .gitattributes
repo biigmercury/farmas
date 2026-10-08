@@ -1,0 +1,14 @@
+# Keep line endings consistent across Windows, Mac and the hosting servers.
+* text=auto
+
+# Shell scripts and git hooks MUST use LF, or they fail on Mac/Linux and in Git Bash ("bad interpreter").
+.githooks/* text eol=lf
+*.sh text eol=lf
+
+# Binary files: never touch.
+*.png binary
+*.jpg binary
+*.ico binary
+*.mp4 binary
+*.webm binary
+*.pdf binary
