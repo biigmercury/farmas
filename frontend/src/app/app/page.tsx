@@ -5,6 +5,7 @@ import { Button, Card, Tag } from "@/components/ui";
 import { ErrorBox, Loading } from "@/components/states";
 import { useAsync } from "@/hooks/use-async";
 import { naira } from "@/lib/demo-data";
+import type { ActivityKind } from "@/lib/types";
 import { loadDashboard } from "@/services/farm-data";
 
 function greeting(): string {
@@ -14,6 +15,21 @@ function greeting(): string {
 
 const dueLabel = (iso: string) =>
   new Date(iso).toLocaleDateString("en-NG", { weekday: "short", day: "numeric", month: "short" });
+
+const shortDate = (iso: string) => new Date(iso).toLocaleDateString("en-NG", { day: "numeric", month: "short" });
+
+const KIND_STYLE: Record<ActivityKind, string> = {
+  SALE: "bg-lime",
+  EXPENSE: "bg-mist",
+  PURCHASE: "bg-mist",
+  ADDED: "bg-mist",
+  DEATH: "bg-critical/15 text-critical",
+  REMOVED: "bg-warn/15 text-warn",
+};
+
+const KIND_LABEL: Record<ActivityKind, string> = {
+  SALE: "Sale", EXPENSE: "Expense", PURCHASE: "Bought", ADDED: "Added", DEATH: "Death", REMOVED: "Removed",
+};
 
 export default function Dashboard() {
   const { data, loading, error, reload } = useAsync(loadDashboard);
@@ -56,6 +72,24 @@ export default function Dashboard() {
               <span className="label">View</span>
             </Link>
           )}
+          {data.mortality.total > 0 && (
+            <Link
+              href="/app/health"
+              className="block rounded-2xl border border-critical/40 bg-white p-4"
+            >
+              <span className="flex items-center justify-between gap-3">
+                <span className="font-bold text-critical">
+                  ⚠ {data.mortality.total.toLocaleString("en-NG")} {data.mortality.total === 1 ? "animal" : "animals"} died in
+                  the last {data.mortality.days} days
+                </span>
+                <span className="label shrink-0">Report</span>
+              </span>
+              <span className="mt-1 block text-sm text-forest/75">
+                {data.mortality.byType.map((t) => `${t.label} ${t.qty}`).join(" · ")}. Tap to describe what you are
+                seeing and get next steps.
+              </span>
+            </Link>
+          )}
           <Card>
             <p className="label mb-3"><Tag>Recent activity</Tag></p>
             {data.activity.length === 0 ? (
@@ -63,14 +97,34 @@ export default function Dashboard() {
                 Nothing yet. Tell FarmAs AI what happened today, like &ldquo;I sold 20 birds for 75k&rdquo;.
               </p>
             ) : (
-              <ul className="space-y-2">
-                {data.activity.map((a) => (
-                  <li key={a} className="flex gap-2">
-                    <span className="text-leaf">•</span>
-                    {a}
-                  </li>
-                ))}
-              </ul>
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="label border-b border-forest/15">
+                    <th scope="col" className="py-2 pr-3 font-normal">Date</th>
+                    <th scope="col" className="py-2 pr-3 font-normal">Activity</th>
+                    <th scope="col" className="py-2 text-right font-normal">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-forest/10">
+                  {data.activity.map((a) => (
+                    <tr key={a.id}>
+                      <td className="whitespace-nowrap py-3 pr-3 align-top text-sm text-forest/75">{shortDate(a.at)}</td>
+                      <td className="py-3 pr-3 align-top">
+                        <span className="block">{a.title}</span>
+                        <span className="mt-1 flex flex-wrap items-center gap-2">
+                          <span className={`label rounded-full px-2.5 py-0.5 text-[0.65rem] ${KIND_STYLE[a.kind]}`}>
+                            {KIND_LABEL[a.kind]}
+                          </span>
+                          {a.detail && <span className="text-sm text-forest/65">{a.detail}</span>}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap py-3 text-right align-top font-mono">
+                        {a.amount === null ? <span className="text-forest/40">–</span> : naira(a.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </Card>
         </div>

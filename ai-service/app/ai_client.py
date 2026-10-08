@@ -203,6 +203,45 @@ def generate_structured(
     return parsed
 
 
+def generate_text(
+    *,
+    system: str,
+    messages: Sequence[dict],
+    effort: str = "none",
+    max_tokens: int = 900,
+) -> str:
+    """Ask the model for a plain-text reply to a conversation. Raises AiUnavailable on any failure.
+
+    `messages` are {"role": "user" | "assistant", "content": str}, oldest first.
+    """
+    client = _get_client()
+
+    def make(model: str, timeout: float):
+        kwargs: dict = dict(
+            model=model,
+            messages=[{"role": "system", "content": system}, *messages],
+            max_completion_tokens=max_tokens,
+        )
+        if _supports_reasoning_effort(model):
+            kwargs["reasoning_effort"] = effort
+        return client.with_options(timeout=timeout).chat.completions.create(**kwargs)
+
+    try:
+        completion = _call_with_fallback(make)
+    except AiUnavailable:
+        raise
+    except Exception as e:
+        raise AiUnavailable(f"The AI request failed ({_reason(e)})") from e
+
+    message = completion.choices[0].message  # type: ignore[attr-defined]
+    if getattr(message, "refusal", None):
+        raise AiUnavailable("The AI declined to answer this request.")
+    text = (getattr(message, "content", "") or "").strip()
+    if not text:
+        raise AiUnavailable("The AI returned an empty reply.")
+    return text
+
+
 def transcribe(*, data: bytes, filename: str, mime: str, prompt: str = "") -> str:
     """Speech to text. `prompt` can hint spelling and vocabulary (for example Pidgin words)."""
     client = _get_client()

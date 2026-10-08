@@ -16,8 +16,8 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // The microphone is for our own pages (voice notes); camera and location are not used.
-          { key: "Permissions-Policy", value: "microphone=(self), camera=(), geolocation=()" },
+          // The microphone (voice notes) and location (nearest vet) are for our own pages only; the camera is not used.
+          { key: "Permissions-Policy", value: "microphone=(self), camera=(), geolocation=(self)" },
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
         ],
       },

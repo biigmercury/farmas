@@ -7,13 +7,17 @@ import { validate } from "../../middlewares/validate.middleware";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { aiRoutes } from "../ai/ai.routes";
 import { healthRoutes } from "../health/health.routes";
+import { findNearbyVets } from "../vets/vets.service";
 import { getDashboard } from "./dashboard.service";
+import { getInventory, removeLivestock } from "./inventory.service";
 import {
   addLivestockSchema,
   alertActionSchema,
   createFarmSchema,
   farmParamsSchema,
   listQuerySchema,
+  nearbyVetsQuerySchema,
+  removeLivestockSchema,
   taskActionSchema,
 } from "./farm.schemas";
 import * as farmService from "./farm.service";
@@ -152,6 +156,31 @@ farmRoutes.post(
   asyncHandler(async (req, res) => {
     const result = await farmService.addLivestock(req.params.farmId, req.body);
     res.status(201).json({ success: true, data: result });
+  })
+);
+
+farmRoutes.get(
+  "/:farmId/inventory",
+  asyncHandler(async (req, res) => {
+    res.json({ success: true, data: await getInventory(req.params.farmId) });
+  })
+);
+
+farmRoutes.post(
+  "/:farmId/inventory/remove",
+  validate(removeLivestockSchema),
+  asyncHandler(async (req, res) => {
+    const result = await removeLivestock(req.params.farmId, req.body);
+    res.status(201).json({ success: true, data: { removed: -result.applied, remaining: result.remaining } });
+  })
+);
+
+farmRoutes.get(
+  "/:farmId/vets/nearby",
+  validate(nearbyVetsQuerySchema, "query"),
+  asyncHandler(async (req, res) => {
+    const { lat, lng } = req.query as unknown as { lat: number; lng: number };
+    res.json({ success: true, data: await findNearbyVets(lat, lng) });
   })
 );
 

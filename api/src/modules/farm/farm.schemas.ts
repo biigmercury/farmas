@@ -31,6 +31,18 @@ export const addLivestockSchema = z.object({
   breed: z.string().trim().max(60).optional(),
 });
 
+export const removeLivestockSchema = z.object({
+  type: z.enum(["POULTRY", "GOAT", "SHEEP", "CATTLE", "PIG", "RABBIT", "FISH"]),
+  quantity: z.coerce.number().int().min(1, "Quantity must be at least 1.").max(1_000_000),
+  reason: z.enum(["DEATH", "LOST", "CONSUMED"]),
+  note: z.string().trim().max(200).optional(),
+});
+
+export const nearbyVetsQuerySchema = z.object({
+  lat: z.coerce.number().min(-90).max(90),
+  lng: z.coerce.number().min(-180).max(180),
+});
+
 export type AddLivestockInput = z.infer<typeof addLivestockSchema>;
 export type CreateFarmInput = z.infer<typeof createFarmSchema>;
 export type ListQuery = z.infer<typeof listQuerySchema>;

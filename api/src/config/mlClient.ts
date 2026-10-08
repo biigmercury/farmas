@@ -8,6 +8,7 @@ export type NluIntent =
   | "CREATE_LIVESTOCK"
   | "CREATE_FEED_RECORD"
   | "CREATE_HEALTH_RECORD"
+  | "REMOVE_LIVESTOCK"
   | "QUERY_EXPENSES"
   | "QUERY_SALES"
   | "QUERY_PROFIT"
@@ -23,6 +24,7 @@ export interface NluEntities {
   description?: string;
   symptoms?: string[];
   deaths?: number;
+  reason?: "LOST" | "CONSUMED";
 }
 
 export interface NluResult {
@@ -54,10 +56,19 @@ export interface AssessContext {
   vaccinated?: string;
 }
 
-export class MlServiceError extends Error {
-  readonly service: "stt" | "nlu" | "health";
+export type MlService = "stt" | "nlu" | "health" | "chat";
 
-  constructor(service: "stt" | "nlu" | "health", message: string, cause?: unknown) {
+export type ChatLanguage = "auto" | "english" | "pidgin";
+
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export class MlServiceError extends Error {
+  readonly service: MlService;
+
+  constructor(service: MlService, message: string, cause?: unknown) {
     super(message);
     this.name = "MlServiceError";
     this.service = service;
@@ -76,7 +87,7 @@ const http = axios.create({
     : undefined,
 });
 
-function toMlError(service: "stt" | "nlu" | "health", err: unknown): MlServiceError {
+function toMlError(service: MlService, err: unknown): MlServiceError {
   if (err instanceof AxiosError) {
     const status = err.response?.status;
     logger.error({ service, url: err.config?.url, status, message: err.message }, "ML service call failed");
@@ -92,7 +103,7 @@ function toMlError(service: "stt" | "nlu" | "health", err: unknown): MlServiceEr
   return new MlServiceError(service, ML_UNAVAILABLE_MESSAGE, err);
 }
 
-async function postJson<T>(path: string, body: unknown, service: "nlu" | "health"): Promise<T> {
+async function postJson<T>(path: string, body: unknown, service: "nlu" | "health" | "chat"): Promise<T> {
   try {
     const res = await http.post<T>(path, body, {
       headers: { "Content-Type": "application/json" },
@@ -144,6 +155,30 @@ export const mlClient = {
       language: result.language === "english" || result.language === "pidgin" ? result.language : undefined,
       entities: result.entities ?? {},
     };
+  },
+
+  /** Chatbot mode: a plain-text answer to a general question. Never changes any record. */
+  async chat(input: {
+    message: string;
+    history: ChatTurn[];
+    language: ChatLanguage;
+    farm?: Record<string, unknown>;
+    vetsText?: string;
+  }): Promise<string> {
+    const result = await postJson<{ reply?: string }>(
+      "/chat/answer",
+      {
+        message: input.message,
+        history: input.history,
+        language: input.language,
+        farm: input.farm,
+        vets_text: input.vetsText ?? "",
+      },
+      "chat"
+    );
+    const reply = result?.reply?.trim();
+    if (!reply) throw new MlServiceError("chat", ML_UNAVAILABLE_MESSAGE);
+    return reply;
   },
 
   async assess(

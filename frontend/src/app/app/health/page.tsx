@@ -16,6 +16,7 @@ import {
   type RiskLevel,
 } from "@/lib/health";
 import { ApiError } from "@/lib/api";
+import { NearbyVets } from "@/components/vets";
 import { assessHealth } from "@/services/health";
 
 const RISK_STYLE: Record<RiskLevel, string> = {
@@ -227,7 +228,7 @@ export default function HealthAssistant() {
           </Button>
         </form>
 
-        <div ref={resultRef} tabIndex={-1} className="outline-none lg:sticky lg:top-6" aria-live="polite">
+        <div ref={resultRef} tabIndex={-1} className="space-y-4 outline-none lg:sticky lg:top-6" aria-live="polite">
           {!result ? (
             <Card className="!p-6">
               <p className="label mb-3"><Tag>Your assessment</Tag></p>
@@ -242,6 +243,7 @@ export default function HealthAssistant() {
           ) : (
             <Result r={result} onReset={startOver} />
           )}
+          <NearbyVets />
         </div>
       </div>
     </div>
@@ -275,7 +277,13 @@ function Result({ r, onReset }: { r: HealthAssessment; onReset: () => void }) {
         <Section
           title="Possible concerns"
           items={r.possibleConcerns}
-          empty="FarmAs AI will list possible concerns here once it is connected."
+          empty={
+            r.unavailable
+              ? "The AI could not list concerns this time. Please let a vet look at this case."
+              : r.source === "demo"
+                ? "Possible concerns appear here when FarmAs AI is connected."
+                : "No specific concerns were identified from what you told us. A vet can still check."
+          }
         />
         <Section title="Do now" items={r.nextSteps} numbered />
 

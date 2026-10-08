@@ -3,6 +3,7 @@
   POST /nlu/extract      JSON {text, context?}            -> {intent, confidence, language, entities}
   POST /health/assess    multipart {symptoms, ...image?}  -> assessment
   POST /stt/transcribe   multipart {file}                 -> {transcription}
+  POST /chat/answer      JSON {message, history, language, farm?} -> {reply}
   GET  /healthz
 
 Run from the ai-service folder:  uvicorn app.main:app --port 8001
@@ -15,7 +16,7 @@ from typing import Optional
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from app import ai_client, config, health, nlu, stt
+from app import ai_client, chat, config, health, nlu, stt
 
 PRODUCTION = config.APP_ENV == "production"
 
@@ -102,6 +103,14 @@ async def health_assess(
     )
     try:
         return health.assess(h, media)
+    except ai_client.AiUnavailable as e:
+        raise _ai_down(e) from e
+
+
+@app.post("/chat/answer", response_model=chat.ChatOut, dependencies=[Depends(require_internal_key)])
+def chat_answer(body: chat.ChatIn):
+    try:
+        return chat.answer(body)
     except ai_client.AiUnavailable as e:
         raise _ai_down(e) from e
 

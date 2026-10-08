@@ -4,9 +4,12 @@ import {
   type HealthAssessment,
   type UploadLike,
 } from "../../config/mlClient";
+import type { LivestockType } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { logger } from "../../utils/logger";
+import { animals } from "../../utils/lang";
 import { evaluateFarm, raiseAlert } from "../farm/alertEngine.service";
+import { adjustInventory, parseLivestockType } from "../farm/inventory.service";
 
 export const DEFAULT_DISCLAIMER =
   "FarmAs provides AI-assisted decision support and does not replace professional veterinary diagnosis.";
@@ -53,6 +56,8 @@ export async function assessAndRecord(
   assessment: HealthAssessment;
   unavailable: boolean;
   text: string;
+  /** Set when dead animals were taken off the inventory. */
+  inventory?: { type: LivestockType; removed: number; remaining: number };
 }> {
   let assessment: HealthAssessment;
   let unavailable = false;
@@ -95,6 +100,19 @@ export async function assessAndRecord(
     },
   });
 
+  // Dead animals are no longer available: take them off the count and keep a log entry for the dashboard.
+  let inventory: { type: LivestockType; removed: number; remaining: number } | undefined;
+  const deaths = input.mortality ?? 0;
+  if (deaths > 0) {
+    const type = parseLivestockType(input.species) ?? (await onlyActiveType(farmId));
+    if (type) {
+      const result = await prisma.$transaction((tx) =>
+        adjustInventory(tx, farmId, type, -deaths, "DEATH", input.symptoms.slice(0, 120))
+      );
+      if (result.applied !== 0) inventory = { type, removed: -result.applied, remaining: result.remaining };
+    }
+  }
+
   if (assessment.requires_vet_escalation || assessment.risk_level === "HIGH") {
     const concerns = assessment.possible_concerns.join("; ");
     await raiseAlert(farmId, {
@@ -117,7 +135,19 @@ export async function assessAndRecord(
       formatAssessment(assessment)
     : formatAssessment(assessment);
 
-  const text = `${body}\n\n${assessment.disclaimer || DEFAULT_DISCLAIMER}`;
+  const removedLine = inventory
+    ? `\n\nI also took ${animals(inventory.type, inventory.removed)} off your inventory (${inventory.remaining} left).`
+    : "";
+  const text = `${body}${removedLine}\n\n${assessment.disclaimer || DEFAULT_DISCLAIMER}`;
 
-  return { record, assessment, unavailable, text };
+  return { record, assessment, unavailable, text, inventory };
+}
+
+/** The animal type to use when the farmer did not say which: only safe if the farm keeps exactly one kind. */
+async function onlyActiveType(farmId: string): Promise<LivestockType | undefined> {
+  const rows = await prisma.livestock.groupBy({
+    by: ["type"],
+    where: { farmId, status: "ACTIVE", quantity: { gt: 0 } },
+  });
+  return rows.length === 1 ? rows[0].type : undefined;
 }

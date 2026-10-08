@@ -412,3 +412,65 @@ def test_production_starts_with_a_key_and_hides_the_docs_page():
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, cwd=str(config.SERVICE_DIR))
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip().endswith("None None")
+
+
+# ---------- chatbot mode -------------------------------------------------------------------
+
+def test_chat_answer_passes_language_history_and_knowledge_to_the_model(monkeypatch):
+    seen = {}
+
+    def fake_text(**kw):
+        seen.update(kw)
+        return "Make you separate the sick goats."
+
+    monkeypatch.setattr(ai_client, "generate_text", fake_text)
+    r = client.post("/chat/answer", json={
+        "message": "My goat is coughing, what should I do?",
+        "history": [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "Hello!"}],
+        "language": "pidgin",
+        "farm": {"name": "Dons Farm", "livestock": "30 goats"},
+    })
+    assert r.status_code == 200
+    assert r.json() == {"reply": "Make you separate the sick goats."}
+    last = seen["messages"][-1]["content"]
+    assert "Nigerian Pidgin" in last and "Dons Farm" in last and "KNOWLEDGE EXCERPTS" in last
+    assert [m["role"] for m in seen["messages"]] == ["user", "assistant", "user"]
+
+
+def test_chat_answer_only_lists_vets_the_app_found(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(ai_client, "generate_text", lambda **kw: seen.update(kw) or "ok")
+    client.post("/chat/answer", json={"message": "nearest vet?", "vets_text": "1. Green Paws Clinic, 2.1 km"})
+    assert "Green Paws Clinic" in seen["messages"][-1]["content"]
+
+
+def test_chat_answer_reports_503_when_the_ai_is_down(monkeypatch):
+    def boom(**kw):
+        raise ai_client.AiUnavailable("down")
+
+    monkeypatch.setattr(ai_client, "generate_text", boom)
+    assert client.post("/chat/answer", json={"message": "hi"}).status_code == 503
+
+
+def test_chat_answer_rejects_an_empty_message():
+    assert client.post("/chat/answer", json={"message": ""}).status_code == 422
+
+
+def test_nlu_accepts_remove_livestock_with_a_reason(monkeypatch):
+    fake = nlu.NluResult(
+        intent="REMOVE_LIVESTOCK", confidence=0.9, language="pidgin",
+        entities=nlu.Entities(quantity=5, livestock_type="GOAT", reason="LOST"),
+    )
+    monkeypatch.setattr(ai_client, "generate_structured", lambda **kw: fake)
+    out = nlu.extract("Dem don thief 5 goats")
+    assert out.intent == "REMOVE_LIVESTOCK" and out.entities.reason == "LOST"
+
+
+def test_nlu_gives_the_model_recent_conversation_for_follow_ups(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        ai_client, "generate_structured",
+        lambda **kw: seen.update(kw) or nlu.NluResult(intent="UNKNOWN", confidence=0.2, language="english", entities=nlu.Entities()),
+    )
+    nlu.extract("and the other 5?", {"history": [{"role": "user", "content": "I sold 10 goats"}]})
+    assert "I sold 10 goats" in seen["prompt"] and "RECENT CONVERSATION" in seen["prompt"]

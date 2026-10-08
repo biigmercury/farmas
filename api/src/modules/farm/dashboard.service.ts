@@ -1,4 +1,5 @@
 import { prisma } from "../../config/prisma";
+import { getMortality, getRecentActivity } from "./inventory.service";
 
 function toNumber(value: unknown): number {
   const n = Number(value ?? 0);
@@ -6,7 +7,18 @@ function toNumber(value: unknown): number {
 }
 
 export async function getDashboard(farmId: string) {
-  const [farm, livestockByType, revenueAgg, expenseAgg, activeAlertCount, activeAlerts, upcomingTasks, batchAgg] =
+  const [
+    farm,
+    livestockByType,
+    revenueAgg,
+    expenseAgg,
+    activeAlertCount,
+    activeAlerts,
+    upcomingTasks,
+    batchAgg,
+    mortality,
+    activity,
+  ] =
     await Promise.all([
       prisma.farm.findUnique({ where: { id: farmId }, select: { id: true, name: true, location: true } }),
       prisma.livestock.groupBy({
@@ -41,6 +53,8 @@ export async function getDashboard(farmId: string) {
         _sum: { quantity: true },
         _count: { _all: true },
       }),
+      getMortality(farmId, 7),
+      getRecentActivity(farmId, 8),
     ]);
 
   const revenue = toNumber(revenueAgg._sum.amount);
@@ -66,6 +80,8 @@ export async function getDashboard(farmId: string) {
     activeAlertCount,
     activeAlerts,
     upcomingTasks,
+    mortality,
+    activity,
     generatedAt: new Date().toISOString(),
   };
 }

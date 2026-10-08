@@ -12,6 +12,7 @@ import { logger } from "../../utils/logger";
 import { isAffirmative, isNegative, naira } from "../../utils/format";
 import { DEFAULT_LANG, animals, t, type Lang } from "../../utils/lang";
 import { evaluateFarm } from "../farm/alertEngine.service";
+import { adjustInventory } from "../farm/inventory.service";
 import { assessAndRecord } from "../health/health.service";
 import { runQuery } from "./query.service";
 
@@ -36,6 +37,7 @@ const ACTION_LABELS: Record<string, string> = {
   CREATE_LIVESTOCK: "Livestock intake",
   CREATE_FEED_RECORD: "Feed record",
   CREATE_HEALTH_RECORD: "Health record",
+  REMOVE_LIVESTOCK: "Livestock removal",
 };
 
 const EXAMPLES: Record<string, string> = {
@@ -44,13 +46,22 @@ const EXAMPLES: Record<string, string> = {
   CREATE_LIVESTOCK: "I buy 100 broilers for 300k",
   CREATE_FEED_RECORD: "I give dem 5 bags feed for 45k",
   CREATE_HEALTH_RECORD: "300 birds don kpai since morning",
+  REMOVE_LIVESTOCK: "Thieves took 5 goats",
   QUERY_EXPENSES: "How much I spend this month?",
   QUERY_PROFIT: "How much profit I make?",
   QUERY_SALES: "How much I don sell?",
   QUERY_LIVESTOCK: "How many animals I get?",
 };
 
-function unknownReply(lang: Lang): string {
+const GREETING =
+  /^\s*(hi|hello|hey|hiya|good\s*(morning|afternoon|evening|day)|how far|how you dey|wetin dey|sup|yo|howdy|thanks?|thank you|thank u|ok(ay)?|nice|great)\b[\s!.?,]*$/i;
+
+function unknownReply(lang: Lang, text = ""): string {
+  if (GREETING.test(text)) {
+    return lang === "pidgin"
+      ? 'Hello! I be FarmAs AI. Tell me wetin happen for your farm today, like "I sell 20 birds for 75k", or ask me "how much I spend this month?"'
+      : 'Hello! I am FarmAs AI. Tell me what happened on your farm today, like "I sold 20 birds for 75k", or ask "How much did I spend this month?"';
+  }
   return lang === "pidgin"
     ? [
         "I no understand wetin you mean yet. You fit try things like:",
@@ -71,6 +82,12 @@ export interface ProcessInputOptions {
   userId: string;
   text: string;
   channel: "APP" | "WHATSAPP";
+  /** The conversation this message belongs to (app chats). */
+  sessionId?: string;
+  /** "auto" mirrors the farmer; "english" / "pidgin" force the reply language. */
+  language?: "auto" | "english" | "pidgin";
+  /** Earlier messages in this conversation, so follow-ups make sense. */
+  history?: Array<{ role: "user" | "assistant"; content: string }>;
 }
 
 interface FarmContext {
@@ -94,6 +111,7 @@ export interface ResolvedAction {
   symptoms?: string[];
   numberAffected?: number;
   mortality?: number;
+  removeReason?: "LOST" | "CONSUMED";
 }
 
 async function buildFarmContext(farmId: string): Promise<FarmContext> {
@@ -252,6 +270,14 @@ export function resolveAction(
           livestockType: resolveLivestockType(entities, context),
         };
       }
+    case "REMOVE_LIVESTOCK":
+      return {
+        ...base,
+        quantity: entities.quantity,
+        livestockType: resolveLivestockType(entities, context),
+        removeReason: entities.reason,
+        description: entities.description,
+      };
     default:
       return base;
   }
@@ -283,6 +309,16 @@ function findMissing(data: ResolvedAction): string[] {
       break;
     case "CREATE_HEALTH_RECORD":
       if (!data.symptoms?.length) missing.push(t(lang, "the symptoms", "wetin be the symptoms"));
+      // Deaths come off the inventory, so we must know which animals died.
+      if ((data.mortality ?? 0) > 0 && !data.livestockType) missing.push(animalType);
+      break;
+    case "REMOVE_LIVESTOCK":
+      if (!quantityOk) missing.push(t(lang, "how many animals to remove", "how many animals you wan remove"));
+      if (!data.livestockType) missing.push(animalType);
+      if (!data.removeReason)
+        missing.push(
+          t(lang, "why they are leaving: lost or stolen, or eaten at home", "wetin happen to dem: lost or stolen, or una chop dem for house")
+        );
       break;
     default:
       break;
@@ -325,6 +361,10 @@ export function summarizeAction(data: ResolvedAction): string {
       return `you reported ${data.numberAffected ?? 1} animal(s) affected${
         data.mortality ? ` (${data.mortality} dead)` : ""
       }: ${data.symptoms?.join("; ") ?? "symptoms unclear"}`;
+    case "REMOVE_LIVESTOCK":
+      return `you want to remove ${animals(data.livestockType, data.quantity ?? 0)} (${
+        data.removeReason === "CONSUMED" ? "eaten or slaughtered at home" : "lost or stolen"
+      })`;
     default:
       return "you want to record something";
   }
@@ -365,14 +405,15 @@ async function createPendingAction(
 
 async function routeInput(opts: ProcessInputOptions, text: string): Promise<string> {
   const context = await buildFarmContext(opts.farmId);
-  const nlu = await mlClient.extract(text, context.mlContext);
-  const lang: Lang = nlu.language ?? DEFAULT_LANG;
+  const nlu = await mlClient.extract(text, { ...context.mlContext, history: opts.history ?? [] });
+  // The farmer can force the reply language; otherwise we mirror how they wrote.
+  const lang: Lang = opts.language && opts.language !== "auto" ? opts.language : nlu.language ?? DEFAULT_LANG;
 
   if (nlu.intent.startsWith("QUERY_")) {
     return runQuery(opts.farmId, nlu.intent, nlu.entities, lang);
   }
 
-  if (nlu.intent.startsWith("CREATE_")) {
+  if (nlu.intent.startsWith("CREATE_") || nlu.intent === "REMOVE_LIVESTOCK") {
     if (nlu.confidence < MIN_CREATE_CONFIDENCE) {
       const example = EXAMPLES[nlu.intent] ?? EXAMPLES.CREATE_EXPENSE;
       const pct = Math.round(nlu.confidence * 100);
@@ -391,7 +432,7 @@ async function routeInput(opts: ProcessInputOptions, text: string): Promise<stri
     return createPendingAction(opts.farmId, text, nlu, resolved);
   }
 
-  return unknownReply(lang);
+  return unknownReply(lang, text);
 }
 
 export async function processInput(opts: ProcessInputOptions): Promise<string> {
@@ -421,6 +462,7 @@ export async function processInput(opts: ProcessInputOptions): Promise<string> {
         userId: opts.userId,
         farmId: opts.farmId,
         channel: opts.channel,
+        sessionId: opts.sessionId,
         message: opts.text,
         response: reply,
       },
@@ -447,30 +489,6 @@ async function findBatchId(farmId: string, livestockType?: LivestockType): Promi
     select: { id: true },
   });
   return batch?.id ?? null;
-}
-
-async function adjustInventory(
-  tx: Prisma.TransactionClient,
-  farmId: string,
-  type: LivestockType,
-  delta: number
-): Promise<void> {
-  const row = await tx.livestock.findFirst({
-    where: { farmId, type, status: "ACTIVE" },
-    orderBy: { createdAt: "asc" },
-  });
-
-  if (!row) {
-    if (delta > 0) {
-      await tx.livestock.create({ data: { farmId, type, quantity: delta } });
-    }
-    return;
-  }
-
-  await tx.livestock.update({
-    where: { id: row.id },
-    data: { quantity: Math.max(0, row.quantity + delta) },
-  });
 }
 
 async function executeAction(
@@ -518,7 +536,7 @@ async function executeAction(
             date,
           },
         });
-        await adjustInventory(tx, farmId, type, -(data.quantity ?? 0));
+        await adjustInventory(tx, farmId, type, -(data.quantity ?? 0), "SALE", data.buyer);
         return created;
       });
       return {
@@ -549,7 +567,7 @@ async function executeAction(
             purchaseCost: data.amount ?? 0,
           },
         });
-        await adjustInventory(tx, farmId, type, quantity);
+        await adjustInventory(tx, farmId, type, quantity, "PURCHASE", name);
         return created;
       });
       return {
@@ -558,6 +576,24 @@ async function executeAction(
           data.lang,
           `Done! I recorded ${animals(type, quantity)} in "${name}".`,
           `Done! I don record ${animals(type, quantity)} into "${name}".`
+        ),
+      };
+    }
+
+    case "REMOVE_LIVESTOCK": {
+      const type = data.livestockType;
+      if (!type) throw new Error("Removal resolved without livestock type");
+      const quantity = data.quantity ?? 0;
+      const result = await prisma.$transaction(async (tx) =>
+        adjustInventory(tx, farmId, type, -quantity, data.removeReason === "CONSUMED" ? "CONSUMED" : "LOST", data.description)
+      );
+      const removed = -result.applied;
+      return {
+        id: `removal-${Date.now()}`,
+        message: t(
+          data.lang,
+          `Done! I took ${animals(type, removed)} off your inventory (${result.remaining} left).`,
+          `Done! I don comot ${animals(type, removed)} from your inventory (${result.remaining} remain).`
         ),
       };
     }

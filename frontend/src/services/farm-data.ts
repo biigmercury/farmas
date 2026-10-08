@@ -1,12 +1,16 @@
 import { api, backendConfigured, ApiError } from "@/lib/api";
 import { getFarmId } from "@/lib/session";
 import type {
+  ActivityKind,
+  ActivityVM,
   AlertVM,
   BatchVM,
   DashboardVM,
   FinanceVM,
+  InventoryVM,
   LivestockVM,
   MoneyRow,
+  MovementVM,
   Severity,
   TaskVM,
   TypeCount,
@@ -70,43 +74,46 @@ const toTask = (t: RawTask): TaskVM => ({
   id: t.id, title: t.title, description: t.description ?? "", dueDate: t.dueDate, category: t.category, done: t.status === "DONE",
 });
 
-const dateLabel = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-NG", { day: "numeric", month: "short" });
-
 // ---------------------------------------------------------------------------------------------
+
+type RawActivity = {
+  id: string;
+  at: string;
+  kind: ActivityKind;
+  subject: string | null;
+  quantity: number | null;
+  amount: number | null;
+  note: string | null;
+};
+
+function toActivity(a: RawActivity): ActivityVM {
+  const subject = a.subject ?? "";
+  const n = a.quantity ?? 0;
+  const title =
+    a.kind === "SALE" ? `${animals(subject, n)} sold`
+    : a.kind === "EXPENSE" ? `${prettyCategory(subject || "Other")} expense`
+    : a.kind === "PURCHASE" ? `${animals(subject, n)} bought`
+    : a.kind === "DEATH" ? `${animals(subject, n)} died`
+    : a.kind === "ADDED" ? `${animals(subject, n)} added`
+    : `${animals(subject, n)} removed`;
+  return { id: a.id, at: a.at, kind: a.kind, title, detail: a.note ?? "", amount: a.amount };
+}
 
 export async function loadDashboard(): Promise<DashboardVM> {
   if (!backendConfigured) return demoDashboard();
 
-  const [d, expenses, sales] = await Promise.all([
-    api<{
-      farm: { name: string; location?: string | null };
-      totalLivestock: number;
-      livestockByType: { type: string; quantity: number }[];
-      revenue: number;
-      expenses: number;
-      estimatedProfit: number;
-      activeAlerts: RawAlert[];
-      upcomingTasks: RawTask[];
-    }>(farmPath("/dashboard")),
-    api<{ expenses: RawExpense[] }>(farmPath(`/expenses?limit=5`)),
-    api<{ sales: RawSale[] }>(farmPath(`/sales?limit=5`)),
-  ]);
-
-  // Recent activity: the latest few expenses and sales, newest first.
-  const events = [
-    ...expenses.expenses.map((e) => ({
-      at: e.date,
-      text: `${prettyCategory(e.category)} expense · ${naira(num(e.amount))}`,
-    })),
-    ...sales.sales.map((s) => ({
-      at: s.date,
-      text: `${animals(s.livestockType, s.quantity)} sold · ${naira(num(s.amount))}`,
-    })),
-  ]
-    .sort((a, b) => +new Date(b.at) - +new Date(a.at))
-    .slice(0, 5)
-    .map((e) => `${e.text} (${dateLabel(e.at)})`);
+  const d = await api<{
+    farm: { name: string; location?: string | null };
+    totalLivestock: number;
+    livestockByType: { type: string; quantity: number }[];
+    revenue: number;
+    expenses: number;
+    estimatedProfit: number;
+    activeAlerts: RawAlert[];
+    upcomingTasks: RawTask[];
+    mortality?: { days: number; total: number; byType: { type: string; quantity: number }[] };
+    activity?: RawActivity[];
+  }>(farmPath("/dashboard"));
 
   return {
     farmName: d.farm.name,
@@ -118,7 +125,12 @@ export async function loadDashboard(): Promise<DashboardVM> {
     profit: d.estimatedProfit,
     alerts: d.activeAlerts.map(toAlert),
     tasks: d.upcomingTasks.map(toTask),
-    activity: events,
+    mortality: {
+      days: d.mortality?.days ?? 7,
+      total: d.mortality?.total ?? 0,
+      byType: (d.mortality?.byType ?? []).map((x) => ({ type: x.type, label: typeLabel(x.type), qty: x.quantity })),
+    },
+    activity: (d.activity ?? []).map(toActivity),
   };
 }
 
@@ -187,6 +199,70 @@ export async function loadFinance(): Promise<FinanceVM> {
   };
 }
 
+const REASON_LABEL: Record<string, string> = {
+  PURCHASE: "Bought", SALE: "Sold", DEATH: "Died", LOST: "Lost or stolen", CONSUMED: "Eaten at home", ADDED: "Added", ADJUSTMENT: "Adjusted",
+};
+
+export async function loadInventory(): Promise<InventoryVM> {
+  if (!backendConfigured) return demoInventory();
+
+  const r = await api<{
+    total: number;
+    types: {
+      type: string;
+      quantity: number;
+      batches: { id: string; name: string; quantity: number; purchaseDate: string }[];
+    }[];
+    movements: { id: string; livestockType: string; change: number; reason: string; note: string | null; createdAt: string }[];
+    last30Days: { added: number; sold: number; died: number; otherRemoved: number };
+  }>(farmPath("/inventory"));
+
+  const movements: MovementVM[] = r.movements.map((m) => ({
+    id: m.id,
+    label: animals(m.livestockType, Math.abs(m.change)),
+    reason: REASON_LABEL[m.reason] ?? m.reason,
+    note: m.note ?? "",
+    at: m.createdAt,
+    positive: m.change > 0,
+  }));
+
+  return {
+    total: r.total,
+    types: r.types.map((t) => ({
+      type: t.type,
+      label: typeLabel(t.type),
+      qty: t.quantity,
+      groups: t.batches.map((b) => ({ id: b.id, name: b.name, qty: b.quantity, date: b.purchaseDate })),
+    })),
+    movements,
+    last30: r.last30Days,
+  };
+}
+
+/** The API's animal type names, for the add/remove forms. */
+export const ANIMAL_OPTIONS = Object.entries(TYPE_LABEL).map(([value, label]) => ({ value, label }));
+
+export async function addAnimals(input: { type: string; quantity: number; name?: string }): Promise<void> {
+  if (!backendConfigured) return;
+  await api(farmPath("/livestock"), {
+    method: "POST",
+    body: JSON.stringify({ type: input.type, quantity: input.quantity, ...(input.name ? { name: input.name } : {}) }),
+  });
+}
+
+export async function removeAnimals(input: {
+  type: string;
+  quantity: number;
+  reason: "DEATH" | "LOST" | "CONSUMED";
+  note?: string;
+}): Promise<{ removed: number; remaining: number }> {
+  if (!backendConfigured) return { removed: input.quantity, remaining: 0 };
+  return api(farmPath("/inventory/remove"), {
+    method: "POST",
+    body: JSON.stringify({ ...input, ...(input.note ? { note: input.note } : {}) }),
+  });
+}
+
 export async function loadAlerts(): Promise<AlertVM[]> {
   if (!backendConfigured) return demo.alerts.map((a) => ({ id: a.id, severity: a.severity, title: a.title, detail: a.detail }));
   const r = await api<{ alerts: RawAlert[] }>(farmPath(`/alerts${LIST}`));
@@ -212,8 +288,6 @@ export async function setTaskDone(id: string, done: boolean): Promise<void> {
 // ---------------------------------------------------------------------------------------------
 // Built-in demo data (no backend configured)
 
-const naira = demo.naira;
-
 function demoDashboard(): DashboardVM {
   return {
     farmName: demo.farm.name,
@@ -225,7 +299,34 @@ function demoDashboard(): DashboardVM {
     profit: demo.totals.profit,
     alerts: demo.alerts.map((a) => ({ id: a.id, severity: a.severity, title: a.title, detail: a.detail })),
     tasks: demoTasks().slice(0, 3),
-    activity: demo.activity,
+    mortality: { days: 7, total: 3, byType: [{ type: "POULTRY", label: "Poultry", qty: 3 }] },
+    activity: demoActivity(),
+  };
+}
+
+function demoActivity(): ActivityVM[] {
+  const day = 86_400_000;
+  const at = (daysAgo: number) => new Date(Date.now() - daysAgo * day).toISOString();
+  return [
+    { id: "d1", at: at(0), kind: "SALE", title: "20 birds sold", detail: "", amount: 72_000 },
+    { id: "d2", at: at(1), kind: "DEATH", title: "3 birds died", detail: "Coughing", amount: null },
+    { id: "d3", at: at(2), kind: "EXPENSE", title: "Feed expense", detail: "", amount: 80_000 },
+    { id: "d4", at: at(4), kind: "PURCHASE", title: "10 goats bought", detail: "", amount: null },
+  ];
+}
+
+function demoInventory(): InventoryVM {
+  const types = demo.livestock.map((l) => ({
+    type: l.type.toUpperCase(), label: l.type, qty: l.qty, groups: [{ id: l.id, name: l.name, qty: l.qty, date: new Date().toISOString() }],
+  }));
+  return {
+    total: types.reduce((sum, t) => sum + t.qty, 0),
+    types,
+    movements: [
+      { id: "m1", label: "3 birds", reason: "Died", note: "Coughing", at: new Date(Date.now() - 86_400_000).toISOString(), positive: false },
+      { id: "m2", label: "10 goats", reason: "Bought", note: "", at: new Date(Date.now() - 4 * 86_400_000).toISOString(), positive: true },
+    ],
+    last30: { added: 10, sold: 20, died: 3, otherRemoved: 0 },
   };
 }
 

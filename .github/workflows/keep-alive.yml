@@ -1,0 +1,25 @@
+name: Keep services awake
+
+# Render's free plan sleeps a service after 15 minutes without visitors, and the first message after that fails
+# while it wakes up. This pings both services every 10 minutes so they stay awake.
+# GitHub can start scheduled jobs a few minutes late, and pauses them if the repository is quiet for 60 days.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping the API and the AI service
+        run: |
+          for url in https://farmas-api.onrender.com/healthz https://farmas-ai.onrender.com/healthz; do
+            curl --silent --show-error --fail --max-time 90 --retry 2 --retry-delay 5 \
+              --output /dev/null --write-out "$url -> %{http_code} in %{time_total}s\n" "$url" \
+              || echo "::warning::$url did not answer"
+          done

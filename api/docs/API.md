@@ -644,6 +644,58 @@ Only a `PENDING` action on this farm can be confirmed.
 
 ---
 
+## Chat modes, history, voice and vets
+
+These extend `POST /api/farms/:farmId/ai/messages` and add a few routes. All need the login token and a farm you own.
+
+### `POST /api/farms/:farmId/ai/messages` (extended body)
+
+| Field | Type | Notes |
+|---|---|---|
+| `text` | string | required, up to 2000 characters |
+| `mode` | `"AGENT"` or `"CHAT"` | default `AGENT`. AGENT records things (always confirm first). CHAT only answers questions and never changes records. Fixed per conversation. |
+| `sessionId` | string | continue an earlier conversation; omit to start a new one |
+| `language` | `"auto"`, `"english"`, `"pidgin"` | default `auto` (mirror the farmer) |
+| `location` | `{ lat, lng }` | the phone's location, only when the farmer allowed it. Used for "nearest vet". |
+| `locationDenied` | boolean | the farmer said no: the farm's saved place is used instead |
+
+Response `data`: `response`, `pending`, `sessionId`, `mode`, and in CHAT mode `vets` (list), `searchUrl` (Google Maps) and
+`needsLocation` (true when the app should ask the phone for its location and send the same message again).
+
+### Conversations
+
+- `GET /ai/sessions`: the farmer's conversations, newest first (`id`, `title`, `mode`, `updatedAt`, `messageCount`).
+- `GET /ai/sessions/:sessionId`: the messages (`message`, `response`, `createdAt`) and any open `pending` action.
+- `DELETE /ai/sessions/:sessionId`: delete one conversation.
+
+The AI receives the last 8 messages of a conversation as memory.
+
+### `POST /api/farms/:farmId/ai/transcribe`
+
+`multipart/form-data` with an `audio` file (webm, mp4, ogg, mp3 or wav, up to 16 MB). Returns `{ text }`. The app shows
+the text to the farmer to check before sending.
+
+### Inventory
+
+- `GET /api/farms/:farmId/inventory`: `total`, `types` (count and groups per animal), `movements` (every change: bought,
+  sold, died, lost, eaten, added) and `last30Days` totals.
+- `POST /api/farms/:farmId/inventory/remove`: `{ type, quantity, reason: "DEATH" | "LOST" | "CONSUMED", note? }`. Fails
+  with 400 if the farm does not have that many.
+
+Deaths reported through the chat or the health check also come off the count and are logged as `DEATH`.
+
+### `GET /api/farms/:farmId/vets/nearby?lat=&lng=`
+
+Vet clinics within 25 km (then 80 km) from OpenStreetMap, nearest first, at most 5:
+`{ vets: [{ name, phone, address, distanceKm, directionsUrl }], searchUrl, lookupFailed }`. Never invents a clinic.
+
+### Dashboard additions
+
+`GET /dashboard` also returns `mortality` (`{ days: 7, total, byType }`) and `activity` (the latest sales, expenses and
+animal changes, newest first).
+
+---
+
 ## Health Triage
 
 Sends symptoms (and optionally a photo + affected/mortality counts) to the ML health-assess endpoint. Always creates a `HealthRecord`, appends a vet-disclaimer, and escalates to an `HEALTH_CLUSTER` alert when the modelled risk is high. If the ML service is down, it still records the event with `assessmentUnavailable: true` and a pointer to talk to a vet (never fabricated risk).

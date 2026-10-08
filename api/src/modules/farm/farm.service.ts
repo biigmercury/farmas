@@ -2,6 +2,7 @@ import type { Farm, LivestockType } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { ApiError } from "../../utils/apiError";
 import type { AddLivestockInput, CreateFarmInput } from "./farm.schemas";
+import { adjustInventory } from "./inventory.service";
 
 export async function createFarm(ownerId: string, input: CreateFarmInput): Promise<Farm> {
   return prisma.farm.create({
@@ -36,9 +37,18 @@ export async function addLivestock(farmId: string, input: AddLivestockInput) {
       where: { farmId, type: input.type, status: "ACTIVE" },
       orderBy: { createdAt: "asc" },
     });
-    const livestock = existing
-      ? await tx.livestock.update({ where: { id: existing.id }, data: { quantity: existing.quantity + input.quantity } })
-      : await tx.livestock.create({ data: { farmId, type: input.type, quantity: input.quantity, breed: input.breed } });
+    if (existing) {
+      await adjustInventory(tx, farmId, input.type, input.quantity, "ADDED", input.name);
+    } else {
+      await tx.livestock.create({ data: { farmId, type: input.type, quantity: input.quantity, breed: input.breed } });
+      await tx.livestockMovement.create({
+        data: { farmId, livestockType: input.type, change: input.quantity, reason: "ADDED", note: input.name?.slice(0, 200) },
+      });
+    }
+    const livestock = await tx.livestock.findFirstOrThrow({
+      where: { farmId, type: input.type, status: "ACTIVE" },
+      orderBy: { createdAt: "asc" },
+    });
 
     const count = await tx.batch.count({ where: { farmId, livestockType: input.type } });
     const batch = await tx.batch.create({

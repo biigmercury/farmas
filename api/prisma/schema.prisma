@@ -82,6 +82,21 @@ enum Channel {
   WHATSAPP
 }
 
+enum MovementReason {
+  PURCHASE
+  SALE
+  DEATH
+  LOST
+  CONSUMED
+  ADDED
+  ADJUSTMENT
+}
+
+enum ChatMode {
+  AGENT
+  CHAT
+}
+
 enum ConfirmationStatus {
   PENDING
   CONFIRMED
@@ -100,6 +115,7 @@ model User {
   updatedAt     DateTime          @updatedAt
   farms         Farm[]
   conversations AiConversation[]
+  chatSessions  ChatSession[]
 
   @@index([role])
 }
@@ -125,6 +141,8 @@ model Farm {
   alerts        Alert[]
   conversations AiConversation[]
   actionLogs    AiActionLog[]
+  movements     LivestockMovement[]
+  chatSessions  ChatSession[]
 
   @@index([ownerId])
 }
@@ -282,20 +300,55 @@ model Alert {
   @@index([farmId, severity])
 }
 
+/// Every change to the number of animals on the farm (bought, sold, died...). Feeds the inventory history,
+/// the dashboard activity table and the mortality alert.
+model LivestockMovement {
+  id            String         @id @default(cuid())
+  farmId        String
+  livestockType LivestockType
+  change        Int
+  reason        MovementReason
+  note          String?
+  createdAt     DateTime       @default(now())
+  farm          Farm           @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, createdAt])
+  @@index([farmId, reason, createdAt])
+}
+
+/// One conversation with FarmAs AI. The farmer can reopen it from the History button.
+model ChatSession {
+  id        String           @id @default(cuid())
+  farmId    String
+  userId    String
+  title     String
+  mode      ChatMode         @default(AGENT)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  farm      Farm             @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  AiConversation[]
+
+  @@index([farmId, userId, updatedAt])
+}
+
 model AiConversation {
-  id        String   @id @default(cuid())
+  id        String       @id @default(cuid())
   userId    String
   farmId    String?
-  channel   Channel  @default(APP)
+  sessionId String?
+  channel   Channel      @default(APP)
   message   String
   response  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  farm      Farm?    @relation(fields: [farmId], references: [id], onDelete: SetNull)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  farm      Farm?        @relation(fields: [farmId], references: [id], onDelete: SetNull)
+  session   ChatSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([farmId, createdAt])
   @@index([userId, createdAt])
+  @@index([sessionId, createdAt])
   @@map("AIConversation")
 }
 

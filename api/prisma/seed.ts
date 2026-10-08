@@ -248,6 +248,14 @@ async function main(): Promise<void> {
     },
   });
 
+  // The deaths above, in the inventory log (this is what the dashboard's mortality card counts).
+  await prisma.livestockMovement.createMany({
+    data: [
+      { farmId: farm.id, livestockType: "POULTRY", change: -3, reason: "DEATH", note: "Coughing, off feed", createdAt: daysAgo(4) },
+      { farmId: farm.id, livestockType: "POULTRY", change: -18, reason: "DEATH", note: "Sudden mortality cluster", createdAt: daysAgo(1) },
+    ],
+  });
+
   await prisma.vaccination.createMany({
     data: [
       {

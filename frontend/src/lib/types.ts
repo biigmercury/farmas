@@ -16,6 +16,23 @@ export type TaskVM = {
 
 export type TypeCount = { type: string; label: string; qty: number };
 
+export type ActivityKind = "SALE" | "EXPENSE" | "PURCHASE" | "DEATH" | "REMOVED" | "ADDED";
+
+/** One line of the dashboard's Recent activity table. */
+export type ActivityVM = {
+  id: string;
+  at: string; // ISO
+  kind: ActivityKind;
+  /** "30 birds sold", "Feed expense", "3 goats died" */
+  title: string;
+  /** Buyer, note or what it was for. May be empty. */
+  detail: string;
+  /** Money, when the row has some (sales and expenses). */
+  amount: number | null;
+};
+
+export type MortalityVM = { days: number; total: number; byType: TypeCount[] };
+
 export type DashboardVM = {
   farmName: string;
   location: string;
@@ -26,7 +43,8 @@ export type DashboardVM = {
   profit: number;
   alerts: AlertVM[];
   tasks: TaskVM[];
-  activity: string[];
+  mortality: MortalityVM;
+  activity: ActivityVM[];
 };
 
 export type BatchVM = {
@@ -56,4 +74,36 @@ export type FinanceVM = {
   truncated: boolean;
 };
 
-export type ChatReply = { text: string; pending: { id: string; summary: string } | null };
+export type ChatMode = "AGENT" | "CHAT";
+export type ChatLanguage = "auto" | "english" | "pidgin";
+
+export type VetVM = {
+  name: string;
+  phone: string | null;
+  address: string | null;
+  distanceKm: number;
+  directionsUrl: string;
+};
+
+export type ChatReply = {
+  text: string;
+  pending: { id: string; summary: string } | null;
+  sessionId?: string;
+  vets?: VetVM[] | null;
+  searchUrl?: string | null;
+  /** The app should ask the phone for its location and send the same message again. */
+  needsLocation?: boolean;
+};
+
+export type SessionSummary = { id: string; title: string; mode: ChatMode; updatedAt: string; messageCount: number };
+
+export type StoredMessage = { id: string; who: "you" | "farmas"; text: string };
+
+export type MovementVM = { id: string; label: string; reason: string; note: string; at: string; positive: boolean };
+
+export type InventoryVM = {
+  total: number;
+  types: { type: string; label: string; qty: number; groups: { id: string; name: string; qty: number; date: string }[] }[];
+  movements: MovementVM[];
+  last30: { added: number; sold: number; died: number; otherRemoved: number };
+};

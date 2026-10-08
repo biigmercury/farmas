@@ -1,23 +1,52 @@
 import { api, backendConfigured } from "@/lib/api";
 import { getFarmId } from "@/lib/session";
-import type { ChatReply } from "@/lib/types";
+import type { ChatLanguage, ChatMode, ChatReply, SessionSummary, StoredMessage, VetVM } from "@/lib/types";
 
 // Chat with FarmAs AI. Contract: api/docs/API.md (AI Farm Companion).
 //
-// Flow: send text -> the API understands it (the AI service) -> for "record this" messages it replies with a question and
-// a pending action; the farmer taps Yes/No -> confirmAction saves (or drops) it. Questions are answered from
-// the real stored records. If a configured server fails, the error is shown: we never hide an outage behind
-// made-up answers.
+// Two modes share one conversation list:
+//   AGENT: understands "I sold 5 goats for 80k", asks "Should I save this?", then changes the farm records.
+//   CHAT:  only answers questions (animal care, feeding, where the nearest vet is). Never changes records.
+// If a configured server fails, the error is shown: we never hide an outage behind made-up answers.
 
-type MessageResponse = { response: string; pending: { id: string; summary: string } | null };
+type MessageResponse = {
+  response: string;
+  pending: { id: string; summary: string } | null;
+  sessionId?: string;
+  vets?: VetVM[] | null;
+  searchUrl?: string | null;
+  needsLocation?: boolean;
+};
 
-export async function sendToAgent(text: string): Promise<ChatReply> {
-  if (!backendConfigured) return demoReply(text);
+export type SendOptions = {
+  mode: ChatMode;
+  sessionId?: string;
+  language: ChatLanguage;
+  location?: { lat: number; lng: number };
+  locationDenied?: boolean;
+};
+
+export async function sendToAgent(text: string, opts: SendOptions): Promise<ChatReply> {
+  if (!backendConfigured) return demoReply(text, opts.mode);
   const r = await api<MessageResponse>(`/api/farms/${getFarmId()}/ai/messages`, {
     method: "POST",
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({
+      text,
+      mode: opts.mode,
+      language: opts.language,
+      ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+      ...(opts.location ? { location: opts.location } : {}),
+      ...(opts.locationDenied ? { locationDenied: true } : {}),
+    }),
   });
-  return { text: r.response, pending: r.pending };
+  return {
+    text: r.response,
+    pending: r.pending,
+    sessionId: r.sessionId,
+    vets: r.vets,
+    searchUrl: r.searchUrl,
+    needsLocation: r.needsLocation,
+  };
 }
 
 export async function confirmAction(actionId: string, confirmed: boolean): Promise<string> {
@@ -31,6 +60,52 @@ export async function confirmAction(actionId: string, confirmed: boolean): Promi
     body: JSON.stringify({ confirmed }),
   });
   return r.response;
+}
+
+export async function listSessions(): Promise<SessionSummary[]> {
+  if (!backendConfigured) return [];
+  const r = await api<{ sessions: SessionSummary[] }>(`/api/farms/${getFarmId()}/ai/sessions`);
+  return r.sessions;
+}
+
+export async function openSession(id: string): Promise<{
+  mode: ChatMode;
+  messages: StoredMessage[];
+  pending: { id: string; summary: string } | null;
+}> {
+  const r = await api<{
+    session: { mode: ChatMode };
+    messages: { id: string; message: string; response: string }[];
+    pending: { id: string; summary: string } | null;
+  }>(`/api/farms/${getFarmId()}/ai/sessions/${id}`);
+  return {
+    mode: r.session.mode,
+    messages: r.messages.flatMap<StoredMessage>((m) => [
+      { id: `${m.id}-q`, who: "you", text: m.message },
+      { id: `${m.id}-a`, who: "farmas", text: m.response },
+    ]),
+    pending: r.pending,
+  };
+}
+
+export async function removeSession(id: string): Promise<void> {
+  if (!backendConfigured) return;
+  await api(`/api/farms/${getFarmId()}/ai/sessions/${id}`, { method: "DELETE" });
+}
+
+/** Turn a voice recording into text. The farmer checks it before sending. */
+export async function transcribeAudio(blob: Blob): Promise<string> {
+  if (!backendConfigured) throw new Error("Voice needs the server to be connected.");
+  const type = blob.type || "audio/webm";
+  const ext = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
+  const body = new FormData();
+  body.append("audio", blob, `voice.${ext}`);
+  const r = await api<{ text: string }>(
+    `/api/farms/${getFarmId()}/ai/transcribe`,
+    { method: "POST", body },
+    { timeoutMs: 90_000 },
+  );
+  return r.text;
 }
 
 /** True when replies come from the built-in demo parser, not a server. */
@@ -53,7 +128,10 @@ function toNaira(raw: string): number | null {
   return best;
 }
 
-function demoReply(message: string): ChatReply {
+function demoReply(message: string, mode: ChatMode): ChatReply {
+  if (mode === "CHAT") {
+    return { text: "Demo mode: the chatbot needs the FarmAs server to answer questions.", pending: null };
+  }
   const lower = message.toLowerCase();
   const amount = toNaira(message);
   const qty = lower.match(/(\d+)\s*(broilers?|birds?|chicks?|goats?|sheep|pigs?|rabbits?|cows?)/);

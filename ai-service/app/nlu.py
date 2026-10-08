@@ -19,6 +19,7 @@ Intent = Literal[
     "CREATE_LIVESTOCK",
     "CREATE_FEED_RECORD",
     "CREATE_HEALTH_RECORD",
+    "REMOVE_LIVESTOCK",
     "QUERY_EXPENSES",
     "QUERY_SALES",
     "QUERY_PROFIT",
@@ -38,6 +39,9 @@ class Entities(BaseModel):
     description: Optional[str] = None
     symptoms: list[str] = Field(default_factory=list)
     deaths: Optional[float] = Field(None, description="How many animals died, if stated")
+    reason: Optional[Literal["LOST", "CONSUMED"]] = Field(
+        None, description="Only for REMOVE_LIVESTOCK: LOST (stolen, missing, given away) or CONSUMED (eaten, slaughtered for the home)"
+    )
 
 
 class NluResult(BaseModel):
@@ -71,6 +75,9 @@ Intents:
 - CREATE_HEALTH_RECORD: sickness, symptoms, or deaths. symptoms = short plain phrases ("coughing", "not eating",
   "watery droppings"). quantity = how many animals are affected (if stated). deaths = how many died (if stated).
   "don kpai", "dem die", "dead" mean died.
+- REMOVE_LIVESTOCK: animals left the farm WITHOUT a sale and did NOT die: stolen, missing, given away, eaten or slaughtered
+  for the home. quantity, livestock_type, reason = LOST or CONSUMED (null if not clear). Deaths are CREATE_HEALTH_RECORD.
+  A sale is CREATE_SALE.
 - QUERY_EXPENSES: asks how much was spent. QUERY_SALES: asks how much was sold/earned from sales.
   QUERY_PROFIT: asks about profit or loss. QUERY_LIVESTOCK: asks how many animals or what is on the farm.
 - UNKNOWN: greetings, thanks, unrelated chat, or anything you cannot confidently map. Give confidence below 0.5.
@@ -89,6 +96,9 @@ Examples (message -> intent; key entities):
 "Abeg check how much I don spend on feed this month" -> QUERY_EXPENSES; category FEED; pidgin
 "Am I making profit?" -> QUERY_PROFIT
 "How many goats do I have?" -> QUERY_LIVESTOCK; GOAT
+"Dem don thief 5 goats" -> REMOVE_LIVESTOCK; quantity 5, GOAT, reason LOST; pidgin
+"We slaughtered 2 sheep for the naming ceremony" -> REMOVE_LIVESTOCK; quantity 2, SHEEP, reason CONSUMED
+"3 goats died" -> CREATE_HEALTH_RECORD; deaths 3, GOAT, symptoms ["deaths"]
 "Good morning" -> UNKNOWN
 """
 
@@ -106,5 +116,13 @@ def extract(text: str, context: Optional[dict] = None) -> NluResult:
                 "\nFARM CONTEXT (use only to resolve words like 'these birds'; never to invent numbers):\n"
                 f"batches: {batches[:10]}\nlivestock: {livestock[:10]}\n"
             )
-    prompt = f"CURRENT_DATE: {today}{farm}\nFARMER MESSAGE: {text.strip()}"
+    recent = ""
+    history = (context or {}).get("history") or []
+    if history:
+        lines = [f"{h.get('role', 'user')}: {str(h.get('content', ''))[:300]}" for h in history[-6:] if isinstance(h, dict)]
+        recent = (
+            "\nRECENT CONVERSATION (only to understand follow-ups like 'and the other 5?'; "
+            "the FARMER MESSAGE is what to extract):\n" + "\n".join(lines) + "\n"
+        )
+    prompt = f"CURRENT_DATE: {today}{farm}{recent}\nFARMER MESSAGE: {text.strip()}"
     return ai_client.generate_structured(system=SYSTEM, prompt=prompt, schema=NluResult, effort="none", max_tokens=600)
