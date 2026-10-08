@@ -1,0 +1,9 @@
+# Never upload local settings, secrets or build output when deploying with the Vercel CLI.
+.env
+.env.*
+!.env.local.example
+node_modules
+.next
+.vercel
+*.log
+*.tsbuildinfo
