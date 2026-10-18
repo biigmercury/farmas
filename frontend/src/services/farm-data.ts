@@ -11,6 +11,7 @@ import type {
   LivestockVM,
   MoneyRow,
   MovementVM,
+  NotificationVM,
   Severity,
   TaskVM,
   TypeCount,
@@ -278,6 +279,50 @@ export async function loadTasks(): Promise<TaskVM[]> {
   if (!backendConfigured) return demoTasks();
   const r = await api<{ tasks: RawTask[] }>(farmPath(`/tasks${LIST}`));
   return r.tasks.map(toTask);
+}
+
+export async function addTask(input: {
+  title: string;
+  dueDate: Date;
+  category: string;
+  description?: string;
+}): Promise<void> {
+  if (!backendConfigured) return;
+  await api(farmPath("/tasks"), {
+    method: "POST",
+    body: JSON.stringify({
+      title: input.title,
+      dueDate: input.dueDate.toISOString(),
+      category: input.category,
+      ...(input.description ? { description: input.description } : {}),
+    }),
+  });
+}
+
+export async function deleteTask(id: string): Promise<void> {
+  if (!backendConfigured) return;
+  await api(farmPath(`/tasks/${id}`), { method: "DELETE" });
+}
+
+type RawNotification = { id: string; title: string; body: string | null; readAt: string | null; createdAt: string };
+
+export async function loadNotifications(): Promise<{ items: NotificationVM[]; unread: number }> {
+  if (!backendConfigured) return { items: [], unread: 0 };
+  const r = await api<{ items: RawNotification[]; unread: number }>(farmPath("/notifications"));
+  return {
+    unread: r.unread,
+    items: r.items.map((n) => ({ id: n.id, title: n.title, body: n.body ?? "", at: n.createdAt, read: n.readAt !== null })),
+  };
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  if (!backendConfigured) return;
+  await api(farmPath(`/notifications/${id}/read`), { method: "POST" });
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  if (!backendConfigured) return;
+  await api(farmPath("/notifications/read-all"), { method: "POST" });
 }
 
 export async function setTaskDone(id: string, done: boolean): Promise<void> {

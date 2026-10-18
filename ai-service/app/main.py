@@ -4,6 +4,8 @@
   POST /health/assess    multipart {symptoms, ...image?}  -> assessment
   POST /stt/transcribe   multipart {file}                 -> {transcription}
   POST /chat/answer      JSON {message, history, language, farm?} -> {reply}
+  POST /translate/text   JSON {text, language}                    -> {text}
+  POST /tts/speak        JSON {text, language, format}            -> audio (mp3 or ogg/opus)
   GET  /healthz
 
 Run from the ai-service folder:  uvicorn app.main:app --port 8001
@@ -11,12 +13,12 @@ Run from the ai-service folder:  uvicorn app.main:app --port 8001
 from __future__ import annotations
 
 import hmac
-from typing import Optional
+from typing import Literal, Optional
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
-from app import ai_client, chat, config, health, nlu, stt
+from app import ai_client, chat, config, health, nlu, speech, stt, translate
 
 PRODUCTION = config.APP_ENV == "production"
 
@@ -115,12 +117,47 @@ def chat_answer(body: chat.ChatIn):
         raise _ai_down(e) from e
 
 
+LanguageName = Literal["english", "pidgin", "yoruba", "igbo", "hausa", "fulani"]
+
+
+class TranslateIn(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    language: LanguageName
+
+
+class TranslateOut(BaseModel):
+    text: str
+
+
+@app.post("/translate/text", response_model=TranslateOut, dependencies=[Depends(require_internal_key)])
+def translate_text(body: TranslateIn):
+    try:
+        return TranslateOut(text=translate.translate(body.text, body.language))
+    except ai_client.AiUnavailable as e:
+        raise _ai_down(e) from e
+
+
+class SpeakIn(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    language: LanguageName = "english"
+    format: Literal["mp3", "opus"] = "mp3"
+
+
+@app.post("/tts/speak", dependencies=[Depends(require_internal_key)])
+def tts_speak(body: SpeakIn):
+    try:
+        audio = speech.speak(body.text, body.language, body.format)
+    except ai_client.AiUnavailable as e:
+        raise _ai_down(e) from e
+    return Response(content=audio, media_type="audio/ogg" if body.format == "opus" else "audio/mpeg")
+
+
 class TranscribeOut(BaseModel):
     transcription: str
 
 
 @app.post("/stt/transcribe", response_model=TranscribeOut, dependencies=[Depends(require_internal_key)])
-async def stt_transcribe(file: UploadFile = File(...)):
+async def stt_transcribe(file: UploadFile = File(...), language: Optional[str] = Form(None)):
     mime = stt.normalize_mime(file.content_type or "", file.filename or "")
     if not mime:
         raise HTTPException(status_code=400, detail="Unsupported audio type. Use ogg, webm, mp3, wav or m4a.")
@@ -130,6 +167,7 @@ async def stt_transcribe(file: UploadFile = File(...)):
     if len(data) > config.MAX_AUDIO_BYTES:
         raise HTTPException(status_code=413, detail="That recording is too long (max 16 MB).")
     try:
-        return TranscribeOut(transcription=stt.transcribe(data, mime))
+        lang = (language or "").lower()
+        return TranscribeOut(transcription=stt.transcribe(data, mime, lang if lang in stt.LANGUAGE_HINTS else ""))
     except ai_client.AiUnavailable as e:
         raise _ai_down(e) from e

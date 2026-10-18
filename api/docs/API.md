@@ -696,6 +696,52 @@ animal changes, newest first).
 
 ---
 
+## Reminders, notifications, voice replies and languages
+
+### Languages
+
+`language` on `POST /ai/messages` accepts `auto`, `english`, `pidgin`, `yoruba`, `igbo`, `hausa` or `fulani`. With `auto`
+the AI works out which language the farmer wrote in. Yoruba, Igbo, Hausa and Fulani replies are our English sentences
+translated by the AI (the numbers, naira amounts and dates are kept exactly). Understanding is strongest for Yoruba and
+Hausa and weakest for Fulani, so Igbo and Fulani need a higher confidence before anything is proposed for saving. The
+response includes `replyLanguage`, the language the reply is in.
+
+### Reminders
+
+A reminder is a Task with a date and time. Create one by chat ("remind me to vaccinate my goats on Friday at 8am", always
+confirmed first) or with `POST /api/farms/:farmId/tasks` (`title`, `dueDate` ISO, `category`, optional `description`).
+`DELETE /api/farms/:farmId/tasks/:taskId` removes one. When a reminder falls due (checked every minute, only for ones due
+in the last 6 hours) it is sent once: to the in-app bell, as a phone push notification, and as a WhatsApp message through
+the bridge.
+
+### Notifications
+
+- `GET /notifications`: `{ items, unread }`, newest first.
+- `POST /notifications/:id/read` and `POST /notifications/read-all`.
+- `GET /push/key`: `{ enabled, publicKey }` (enabled only when the server has VAPID keys).
+- `POST /push/subscribe` with the browser's push subscription (`endpoint`, `keys.p256dh`, `keys.auth`), and
+  `POST /push/unsubscribe` with `{ endpoint }`.
+
+### Voice
+
+- `POST /ai/transcribe`: the `audio` file plus an optional `language` (`yoruba`, `igbo`, `hausa`, `fulani`). The language is
+  used as a hint to the speech recognition.
+- `POST /ai/speak`: `{ text, language, format }` returns audio (`mp3`, or `opus`, the format WhatsApp plays as a voice
+  note). Text is limited to 1,500 characters.
+
+### Looking back
+
+Ask the Agent about the past: "How many birds died in September?", "What did I sell last week?", "When did I last vaccinate?",
+or "What did I tell you about the sick goats?". The first kinds are answered from the stored records; the last searches
+this farmer's saved conversations.
+
+### WhatsApp bridge (internal)
+
+`GET /internal/whatsapp/outbox` and `POST /internal/whatsapp/outbox/:id/sent` are used only by the bridge, with the header
+`X-Bridge-Key` set to `WHATSAPP_BRIDGE_KEY`. They return 503 when that key is not set.
+
+---
+
 ## Health Triage
 
 Sends symptoms (and optionally a photo + affected/mortality counts) to the ML health-assess endpoint. Always creates a `HealthRecord`, appends a vet-disclaimer, and escalates to an `HEALTH_CLUSTER` alert when the modelled risk is high. If the ML service is down, it still records the event with `assessmentUnavailable: true` and a pointer to talk to a vet (never fabricated risk).

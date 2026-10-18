@@ -1,6 +1,6 @@
-import { api, backendConfigured } from "@/lib/api";
-import { getFarmId } from "@/lib/session";
-import type { ChatLanguage, ChatMode, ChatReply, SessionSummary, StoredMessage, VetVM } from "@/lib/types";
+import { API_URL, api, ApiError, backendConfigured } from "@/lib/api";
+import { getFarmId, getToken } from "@/lib/session";
+import type { ChatLanguage, ChatMode, ChatReply, SessionSummary, SpokenLanguage, StoredMessage, VetVM } from "@/lib/types";
 
 // Chat with FarmAs AI. Contract: api/docs/API.md (AI Farm Companion).
 //
@@ -13,6 +13,7 @@ type MessageResponse = {
   response: string;
   pending: { id: string; summary: string } | null;
   sessionId?: string;
+  replyLanguage?: SpokenLanguage;
   vets?: VetVM[] | null;
   searchUrl?: string | null;
   needsLocation?: boolean;
@@ -43,6 +44,7 @@ export async function sendToAgent(text: string, opts: SendOptions): Promise<Chat
     text: r.response,
     pending: r.pending,
     sessionId: r.sessionId,
+    replyLanguage: r.replyLanguage,
     vets: r.vets,
     searchUrl: r.searchUrl,
     needsLocation: r.needsLocation,
@@ -94,18 +96,43 @@ export async function removeSession(id: string): Promise<void> {
 }
 
 /** Turn a voice recording into text. The farmer checks it before sending. */
-export async function transcribeAudio(blob: Blob): Promise<string> {
+export async function transcribeAudio(blob: Blob, language: ChatLanguage = "auto"): Promise<string> {
   if (!backendConfigured) throw new Error("Voice needs the server to be connected.");
   const type = blob.type || "audio/webm";
   const ext = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
   const body = new FormData();
   body.append("audio", blob, `voice.${ext}`);
+  if (language !== "auto") body.append("language", language);
   const r = await api<{ text: string }>(
     `/api/farms/${getFarmId()}/ai/transcribe`,
     { method: "POST", body },
     { timeoutMs: 90_000 },
   );
   return r.text;
+}
+
+/**
+ * Read a reply aloud, for farmers who cannot read or prefer to listen. Returns a playable audio address
+ * (the caller should revoke it with URL.revokeObjectURL when finished).
+ */
+export async function fetchSpeech(text: string, language: SpokenLanguage): Promise<string> {
+  if (!backendConfigured) throw new ApiError("Listening needs the server to be connected.");
+  const res = await fetch(`${API_URL}/api/farms/${getFarmId()}/ai/speak`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify({ text: text.slice(0, 1500), language, format: "mp3" }),
+  });
+  if (!res.ok) {
+    let message = "I could not read that aloud just now. Please try again.";
+    try {
+      const body = (await res.json()) as { error?: { message?: string } };
+      if (body.error?.message) message = body.error.message;
+    } catch {
+      // not JSON: keep the plain message
+    }
+    throw new ApiError(message, res.status);
+  }
+  return URL.createObjectURL(await res.blob());
 }
 
 /** True when replies come from the built-in demo parser, not a server. */

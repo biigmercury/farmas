@@ -58,3 +58,13 @@ services:
       # Your website's address, for example https://farmas.vercel.app (https, no trailing slash).
       - key: FRONTEND_ORIGIN
         sync: false
+      # Phone notifications for reminders (optional). Make the pair with:  npx web-push generate-vapid-keys
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        value: https://farmas-six.vercel.app
+      # Shared secret for the WhatsApp bridge (optional). Any long random string; the bridge's .env must match.
+      - key: WHATSAPP_BRIDGE_KEY
+        sync: false

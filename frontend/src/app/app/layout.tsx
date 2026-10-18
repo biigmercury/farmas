@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Logo } from "@/components/ui";
 import { BottomNav, SideNav } from "@/components/bottom-nav";
+import { NotificationBell } from "@/components/notification-bell";
 import { Loading } from "@/components/states";
 import { backendConfigured } from "@/lib/api";
 import { useSession, useSessionReady } from "@/lib/session";
@@ -49,9 +50,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <Link href="/" aria-label="FarmAs home" className="inline-flex min-h-11 items-center">
             <Logo />
           </Link>
-          <div className="flex items-center gap-3">
-            <span className="label max-w-[8rem] truncate">{farmName}</span>
-            <button type="button" onClick={signOut} className="label min-h-11 underline underline-offset-4">
+          <div className="flex items-center gap-1">
+            <NotificationBell />
+            <span className="label ml-1 max-w-[7rem] truncate">{farmName}</span>
+            <button type="button" onClick={signOut} className="label ml-2 min-h-11 underline underline-offset-4">
               {backendConfigured ? "Log out" : "Exit"}
             </button>
           </div>

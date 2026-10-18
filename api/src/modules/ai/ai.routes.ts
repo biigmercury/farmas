@@ -5,9 +5,10 @@ import { audioUpload } from "../../middlewares/upload.middleware";
 import { validate } from "../../middlewares/validate.middleware";
 import { ApiError } from "../../utils/apiError";
 import { asyncHandler } from "../../utils/asyncHandler";
-import { aiMessageSchema, confirmActionSchema, sessionParamsSchema } from "./ai.schemas";
+import { aiMessageSchema, confirmActionSchema, sessionParamsSchema, speakSchema } from "./ai.schemas";
 import { processChat } from "./chat.service";
-import { confirmAction, getPendingAction, processInput } from "./nlu.service";
+import { confirmAction, getPendingAction, getPendingView, processInputDetailed } from "./nlu.service";
+import type { SpokenLanguage } from "../../config/mlClient";
 
 export const aiRoutes = Router({ mergeParams: true });
 
@@ -74,6 +75,7 @@ aiRoutes.post(
         success: true,
         data: {
           response: result.reply,
+          replyLanguage: result.replyLang ?? "english",
           pending: null,
           sessionId: session.id,
           mode: session.mode,
@@ -85,7 +87,7 @@ aiRoutes.post(
       return;
     }
 
-    const response = await processInput({
+    const { reply: response, replyLang } = await processInputDetailed({
       farmId,
       userId: user.id,
       text: body.text,
@@ -97,20 +99,15 @@ aiRoutes.post(
     await prisma.chatSession.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
 
     // If this message created a "save this?" proposal, hand it back so the app can show Yes / No buttons.
-    const pending = await getPendingAction(farmId);
+    const pending = await getPendingView(farmId, body.language === "auto" ? undefined : body.language);
     res.json({
       success: true,
       data: {
         response,
+        replyLanguage: replyLang,
         sessionId: session.id,
         mode: session.mode,
-        pending: pending
-          ? {
-              id: pending.id,
-              summary: pending.actionTaken.replace(/^Create [^:]+: /, ""),
-              intent: pending.detectedIntent,
-            }
-          : null,
+        pending,
       },
     });
   })
@@ -163,10 +160,7 @@ aiRoutes.get(
         orderBy: { updatedAt: "desc" },
         select: { id: true },
       });
-      const open = latest?.id === session.id ? await getPendingAction(farmId) : null;
-      if (open) {
-        pending = { id: open.id, summary: open.actionTaken.replace(/^Create [^:]+: /, ""), intent: open.detectedIntent };
-      }
+      pending = latest?.id === session.id ? await getPendingView(farmId) : null;
     }
 
     res.json({
@@ -197,12 +191,30 @@ aiRoutes.post(
   audioUpload.single("audio"),
   asyncHandler(async (req, res) => {
     if (!req.file) throw ApiError.badRequest("Please record something first.");
-    const text = await mlClient.transcribe({
-      buffer: req.file.buffer,
-      mimetype: req.file.mimetype,
-      originalname: req.file.originalname || "voice.webm",
-    });
+    const wanted = String(req.body?.language ?? "");
+    const language = (["yoruba", "igbo", "hausa", "fulani", "pidgin", "english"] as const).find((l) => l === wanted);
+    const text = await mlClient.transcribe(
+      {
+        buffer: req.file.buffer,
+        mimetype: req.file.mimetype,
+        originalname: req.file.originalname || "voice.webm",
+      },
+      language as SpokenLanguage | undefined
+    );
     res.json({ success: true, data: { text } });
+  })
+);
+
+/** Read a reply aloud, for farmers who cannot read or prefer to listen. */
+aiRoutes.post(
+  "/speak",
+  validate(speakSchema),
+  asyncHandler(async (req, res) => {
+    const { text, language, format } = req.body as { text: string; language: SpokenLanguage; format: "mp3" | "opus" };
+    const audio = await mlClient.speak(text, language, format);
+    res.setHeader("Content-Type", format === "opus" ? "audio/ogg" : "audio/mpeg");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(audio);
   })
 );
 

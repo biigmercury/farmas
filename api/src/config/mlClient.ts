@@ -9,6 +9,9 @@ export type NluIntent =
   | "CREATE_FEED_RECORD"
   | "CREATE_HEALTH_RECORD"
   | "REMOVE_LIVESTOCK"
+  | "CREATE_REMINDER"
+  | "QUERY_HISTORY"
+  | "SEARCH_CONVERSATIONS"
   | "QUERY_EXPENSES"
   | "QUERY_SALES"
   | "QUERY_PROFIT"
@@ -25,12 +28,19 @@ export interface NluEntities {
   symptoms?: string[];
   deaths?: number;
   reason?: "LOST" | "CONSUMED";
+  remind_at?: string;
+  reminder_title?: string;
+  reminder_kind?: "VACCINATION" | "GENERAL";
+  history_topic?: "SALES" | "EXPENSES" | "DEATHS" | "HEALTH" | "ANIMALS" | "TASKS" | "ALL";
+  period_start?: string;
+  period_end?: string;
+  search_terms?: string[];
 }
 
 export interface NluResult {
   intent: NluIntent;
   confidence: number;
-  language?: "english" | "pidgin";
+  language?: SpokenLanguage;
   entities: NluEntities;
 }
 
@@ -56,9 +66,12 @@ export interface AssessContext {
   vaccinated?: string;
 }
 
-export type MlService = "stt" | "nlu" | "health" | "chat";
+export type MlService = "stt" | "nlu" | "health" | "chat" | "translate" | "tts";
 
-export type ChatLanguage = "auto" | "english" | "pidgin";
+/** Languages the farmer can write or hear. */
+export type SpokenLanguage = "english" | "pidgin" | "yoruba" | "igbo" | "hausa" | "fulani";
+
+export type ChatLanguage = "auto" | SpokenLanguage;
 
 export interface ChatTurn {
   role: "user" | "assistant";
@@ -103,7 +116,11 @@ function toMlError(service: MlService, err: unknown): MlServiceError {
   return new MlServiceError(service, ML_UNAVAILABLE_MESSAGE, err);
 }
 
-async function postJson<T>(path: string, body: unknown, service: "nlu" | "health" | "chat"): Promise<T> {
+async function postJson<T>(
+  path: string,
+  body: unknown,
+  service: "nlu" | "health" | "chat" | "translate"
+): Promise<T> {
   try {
     const res = await http.post<T>(path, body, {
       headers: { "Content-Type": "application/json" },
@@ -133,9 +150,10 @@ export interface UploadLike {
 }
 
 export const mlClient = {
-  async transcribe(audio: UploadLike): Promise<string> {
+  async transcribe(audio: UploadLike, language?: SpokenLanguage): Promise<string> {
     const form = new FormData();
     form.append("file", new Blob([new Uint8Array(audio.buffer)], { type: audio.mimetype }), audio.originalname);
+    if (language && language !== "english" && language !== "pidgin") form.append("language", language);
     const result = await postForm<{ transcription?: string }>("/stt/transcribe", form, "stt");
     const transcription = result?.transcription?.trim();
     if (!transcription) {
@@ -152,9 +170,34 @@ export const mlClient = {
     return {
       intent: result.intent as NluIntent,
       confidence: typeof result.confidence === "number" ? result.confidence : 0,
-      language: result.language === "english" || result.language === "pidgin" ? result.language : undefined,
+      language: (["english", "pidgin", "yoruba", "igbo", "hausa", "fulani"] as const).find((l) => l === result.language),
       entities: result.entities ?? {},
     };
+  },
+
+  /** Translate one of our own replies into the farmer's language. Falls back to the original on any failure. */
+  async translate(text: string, language: SpokenLanguage): Promise<string> {
+    if (language === "english") return text;
+    try {
+      const result = await postJson<{ text?: string }>("/translate/text", { text, language }, "translate");
+      return result?.text?.trim() || text;
+    } catch {
+      return text; // an English answer is better than none
+    }
+  },
+
+  /** Read a reply aloud. Returns the audio bytes (mp3, or ogg/opus for WhatsApp voice notes). */
+  async speak(text: string, language: SpokenLanguage, format: "mp3" | "opus" = "mp3"): Promise<Buffer> {
+    try {
+      const res = await http.post<ArrayBuffer>(
+        "/tts/speak",
+        { text, language, format },
+        { responseType: "arraybuffer", timeout: 60_000, headers: { "Content-Type": "application/json" } }
+      );
+      return Buffer.from(res.data);
+    } catch (err) {
+      throw toMlError("tts", err);
+    }
   },
 
   /** Chatbot mode: a plain-text answer to a general question. Never changes any record. */

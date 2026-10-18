@@ -8,6 +8,7 @@ import { errorHandler, notFoundHandler } from "./middlewares/error.middleware";
 import { loginLimiter, registerLimiter } from "./middlewares/rateLimit.middleware";
 import { authRoutes } from "./modules/auth/auth.routes";
 import { farmRoutes } from "./modules/farm/farm.routes";
+import { bridgeRoutes } from "./modules/whatsapp/bridge.routes";
 import { whatsappRoutes } from "./modules/whatsapp/whatsapp.routes";
 import { logger } from "./utils/logger";
 
@@ -56,6 +57,7 @@ export function createApp() {
   app.use("/api/auth/login", loginLimiter);
   app.use("/api/auth/register", registerLimiter);
   app.use("/api/auth", authRoutes);
+  app.use("/internal/whatsapp", bridgeRoutes);
   app.use("/api/farms", farmRoutes);
 
   app.use(

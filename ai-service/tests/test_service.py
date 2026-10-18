@@ -474,3 +474,127 @@ def test_nlu_gives_the_model_recent_conversation_for_follow_ups(monkeypatch):
     )
     nlu.extract("and the other 5?", {"history": [{"role": "user", "content": "I sold 10 goats"}]})
     assert "I sold 10 goats" in seen["prompt"] and "RECENT CONVERSATION" in seen["prompt"]
+
+
+# ---------- languages, reminders, history, voice ---------------------------------------------
+
+def test_translate_endpoint_returns_the_translation(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(ai_client, "generate_text", lambda **kw: seen.update(kw) or "Mo ti ta ewurẹ mẹwa.")
+    r = client.post("/translate/text", json={"text": "I sold 10 goats.", "language": "yoruba"})
+    assert r.status_code == 200 and r.json() == {"text": "Mo ti ta ewurẹ mẹwa."}
+    assert "Yoruba" in seen["messages"][0]["content"] and "number" in seen["system"].lower()
+
+
+def test_translate_to_english_is_a_no_op_and_costs_nothing(monkeypatch):
+    def boom(**kw):
+        raise AssertionError("the AI must not be called")
+
+    monkeypatch.setattr(ai_client, "generate_text", boom)
+    assert client.post("/translate/text", json={"text": "Hello", "language": "english"}).json() == {"text": "Hello"}
+
+
+def test_translate_reports_503_when_the_ai_is_down(monkeypatch):
+    def down(**kw):
+        raise ai_client.AiUnavailable("down")
+
+    monkeypatch.setattr(ai_client, "generate_text", down)
+    assert client.post("/translate/text", json={"text": "Hello", "language": "hausa"}).status_code == 503
+
+
+def test_speak_returns_audio_in_the_requested_format(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(ai_client, "speak", lambda **kw: seen.update(kw) or b"OggS-fake")
+    r = client.post("/tts/speak", json={"text": "Sannu, manomi", "language": "hausa", "format": "opus"})
+    assert r.status_code == 200 and r.content == b"OggS-fake" and r.headers["content-type"] == "audio/ogg"
+    assert seen["fmt"] == "opus" and "Hausa" in seen["instructions"]
+    r = client.post("/tts/speak", json={"text": "Hello"})
+    assert r.headers["content-type"] == "audio/mpeg"
+
+
+def test_speak_rejects_unknown_languages_and_empty_text():
+    assert client.post("/tts/speak", json={"text": "hi", "language": "klingon"}).status_code == 422
+    assert client.post("/tts/speak", json={"text": ""}).status_code == 422
+
+
+def test_transcribe_passes_the_language_code_and_a_hint(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(ai_client, "transcribe", lambda **kw: seen.update(kw) or "Mo ta ewure")
+    r = client.post(
+        "/stt/transcribe", files={"file": ("v.webm", b"abc", "audio/webm")}, data={"language": "yoruba"}
+    )
+    assert r.status_code == 200 and r.json() == {"transcription": "Mo ta ewure"}
+    assert seen["language"] == "yo" and "Yoruba" in seen["prompt"]
+
+
+def test_transcribe_fulani_has_no_language_code_but_still_gets_a_hint(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(ai_client, "transcribe", lambda **kw: seen.update(kw) or "text")
+    client.post("/stt/transcribe", files={"file": ("v.webm", b"abc", "audio/webm")}, data={"language": "fulani"})
+    assert seen["language"] == "" and "Fulani" in seen["prompt"]
+
+
+def test_transcribe_retries_without_the_language_when_it_is_rejected(monkeypatch):
+    calls = []
+
+    class Bad(Exception):
+        status_code = 400
+
+    class FakeTranscriptions:
+        def create(self, **kw):
+            calls.append(kw)
+            if "language" in kw:
+                raise Bad("unsupported language")
+            return type("R", (), {"text": "ok then"})()
+
+    class FakeClient:
+        audio = type("A", (), {"transcriptions": FakeTranscriptions()})()
+
+        def with_options(self, **kw):
+            return self
+
+    monkeypatch.setattr(ai_client, "_get_client", lambda: FakeClient())
+    out = ai_client.transcribe(data=b"x", filename="v.webm", mime="audio/webm", prompt="hint", language="ig")
+    assert out == "ok then" and "language" in calls[0] and "language" not in calls[-1]
+
+
+def test_nlu_reads_a_reminder_and_gives_the_model_nigeria_time(monkeypatch):
+    seen = {}
+    fake = nlu.NluResult(
+        intent="CREATE_REMINDER", confidence=0.9, language="english",
+        entities=nlu.Entities(
+            reminder_title="Vaccinate goats", remind_at="2026-10-23T08:00", reminder_kind="VACCINATION",
+            livestock_type="GOAT",
+        ),
+    )
+    monkeypatch.setattr(ai_client, "generate_structured", lambda **kw: seen.update(kw) or fake)
+    out = nlu.extract("Remind me to vaccinate my goats on Friday", {"current_date": "2026-10-18T23:30:00Z"})
+    assert out.intent == "CREATE_REMINDER" and out.entities.reminder_kind == "VACCINATION"
+    # 23:30 UTC is 00:30 the next day in Nigeria (UTC+1), a Monday
+    assert "2026-10-19 00:30, Monday" in seen["prompt"]
+
+
+def test_nlu_accepts_the_new_languages_and_history_intents(monkeypatch):
+    fake = nlu.NluResult(
+        intent="QUERY_HISTORY", confidence=0.9, language="hausa",
+        entities=nlu.Entities(history_topic="DEATHS", period_start="2026-09-01", period_end="2026-09-30"),
+    )
+    monkeypatch.setattr(ai_client, "generate_structured", lambda **kw: fake)
+    out = nlu.extract("Kaza nawa ne suka mutu a watan Satumba?")
+    assert out.language == "hausa" and out.entities.history_topic == "DEATHS"
+
+    fake2 = nlu.NluResult(
+        intent="SEARCH_CONVERSATIONS", confidence=0.8, language="english",
+        entities=nlu.Entities(search_terms=["sick", "goats"]),
+    )
+    monkeypatch.setattr(ai_client, "generate_structured", lambda **kw: fake2)
+    assert nlu.extract("what did I say about the sick goats?").entities.search_terms == ["sick", "goats"]
+
+
+def test_chat_asks_for_the_chosen_nigerian_language(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(ai_client, "generate_text", lambda **kw: seen.update(kw) or "ok")
+    for lang, word in [("yoruba", "Yoruba"), ("igbo", "Igbo"), ("hausa", "Hausa"), ("fulani", "Fulfulde")]:
+        r = client.post("/chat/answer", json={"message": "hello", "language": lang})
+        assert r.status_code == 200
+        assert word in seen["messages"][-1]["content"]

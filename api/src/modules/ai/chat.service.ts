@@ -1,7 +1,7 @@
-import { MlServiceError, mlClient, type ChatLanguage, type ChatTurn } from "../../config/mlClient";
+import { MlServiceError, mlClient, type ChatLanguage, type ChatTurn, type SpokenLanguage } from "../../config/mlClient";
 import { prisma } from "../../config/prisma";
 import { logger } from "../../utils/logger";
-import { animalLabel, t, type Lang } from "../../utils/lang";
+import { animalLabel, needsTranslation, t, type Lang } from "../../utils/lang";
 import { findNearbyVets, geocode, vetsAsText, type VetPlace } from "../vets/vets.service";
 
 export interface ChatInput {
@@ -19,6 +19,8 @@ export interface ChatInput {
 
 export interface ChatResult {
   reply: string;
+  /** The language the reply is in, so the app can read it aloud with the right voice. */
+  replyLang?: SpokenLanguage;
   vets?: VetPlace[];
   searchUrl?: string;
   /** The app should ask the phone for its location and send the same message again. */
@@ -134,6 +136,10 @@ export async function processChat(input: ChatInput): Promise<ChatResult> {
   try {
     if (isVetSearch(text)) {
       result = await vetReply(input);
+      // Our vet sentences are English or Pidgin: put them into Yoruba, Igbo, Hausa or Fulani if the farmer chose one.
+      if (input.language !== "auto" && needsTranslation(input.language)) {
+        result.reply = await mlClient.translate(result.reply, input.language);
+      }
     } else {
       const reply = await mlClient.chat({
         message: text,
@@ -150,6 +156,8 @@ export async function processChat(input: ChatInput): Promise<ChatResult> {
       throw err;
     }
   }
+
+  result.replyLang = input.language !== "auto" ? input.language : langOf(input.language, text);
 
   // When we only asked for the location, the app sends the same message again with it: do not save it twice.
   if (!result.needsLocation) {

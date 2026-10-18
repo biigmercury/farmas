@@ -31,7 +31,21 @@ def normalize_mime(mime: str, filename: str = "") -> str:
     return CANONICAL.get(ext, "") if ext else ""
 
 
-def transcribe(data: bytes, mime: str) -> str:
+# The speech model takes a two-letter language code. Fulani has none it supports, so it relies on the hint alone.
+LANGUAGE_CODES = {"yoruba": "yo", "hausa": "ha", "igbo": "ig"}
+
+LANGUAGE_HINTS = {
+    "yoruba": "The speaker is talking Yoruba (with some English words). Write Yoruba with its usual spelling and tone marks.",
+    "hausa": "The speaker is talking Hausa (with some English words). Write Hausa in its standard Latin spelling.",
+    "igbo": "The speaker is talking Igbo (with some English words). Write Igbo in its standard spelling.",
+    "fulani": "The speaker is talking Fulani (Fulfulde, with some English or Hausa words). Write it in Latin letters.",
+}
+
+
+def transcribe(data: bytes, mime: str, language: str = "") -> str:
     ext = next((e for e, m in CANONICAL.items() if m == mime), "ogg")
-    text = ai_client.transcribe(data=data, filename=f"voice.{ext}", mime=mime, prompt=HINT)
+    hint = f"{HINT} {LANGUAGE_HINTS[language]}" if language in LANGUAGE_HINTS else HINT
+    text = ai_client.transcribe(
+        data=data, filename=f"voice.{ext}", mime=mime, prompt=hint, language=LANGUAGE_CODES.get(language, "")
+    )
     return "" if text.lower() in {"[unclear]", ""} else text

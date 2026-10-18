@@ -1,6 +1,7 @@
 import { createApp } from "./app";
 import { env } from "./config/env";
 import { disconnectPrisma, prisma } from "./config/prisma";
+import { startReminderScheduler } from "./modules/notifications/reminders.service";
 import { logger } from "./utils/logger";
 
 async function main(): Promise<void> {
@@ -8,6 +9,7 @@ async function main(): Promise<void> {
   logger.info("Database connected");
 
   const app = createApp();
+  startReminderScheduler();
   const server = app.listen(env.PORT, () => {
     logger.info(`FARMAS API dey listen on port ${env.PORT} (${env.NODE_ENV})`);
   });

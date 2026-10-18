@@ -116,6 +116,8 @@ model User {
   farms         Farm[]
   conversations AiConversation[]
   chatSessions  ChatSession[]
+  notifications Notification[]
+  pushSubscriptions PushSubscription[]
 
   @@index([role])
 }
@@ -143,6 +145,7 @@ model Farm {
   actionLogs    AiActionLog[]
   movements     LivestockMovement[]
   chatSessions  ChatSession[]
+  notifications Notification[]
 
   @@index([ownerId])
 }
@@ -278,10 +281,14 @@ model Task {
   dueDate     DateTime
   category    TaskCategory @default(GENERAL)
   status      TaskStatus   @default(PENDING)
+  /// Set when the reminder was sent (in-app, push, WhatsApp), so it is never sent twice.
+  notifiedAt  DateTime?
   farm        Farm         @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  notifications Notification[]
 
   @@index([farmId, status])
   @@index([farmId, dueDate])
+  @@index([status, notifiedAt, dueDate])
 }
 
 model Alert {
@@ -314,6 +321,47 @@ model LivestockMovement {
 
   @@index([farmId, createdAt])
   @@index([farmId, reason, createdAt])
+}
+
+/// Something the farmer should see in the app's bell: a due reminder, an alert.
+model Notification {
+  id        String    @id @default(cuid())
+  farmId    String
+  userId    String
+  taskId    String?
+  title     String
+  body      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  farm      Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task      Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([userId, readAt, createdAt])
+}
+
+/// A phone or browser that agreed to receive push notifications (Web Push).
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// WhatsApp messages the app wants sent (for example reminders). The WhatsApp bridge collects and sends them.
+model OutboundMessage {
+  id        String    @id @default(cuid())
+  phone     String
+  text      String
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([sentAt, createdAt])
 }
 
 /// One conversation with FarmAs AI. The farmer can reopen it from the History button.

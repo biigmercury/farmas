@@ -75,7 +75,10 @@ export type FinanceVM = {
 };
 
 export type ChatMode = "AGENT" | "CHAT";
-export type ChatLanguage = "auto" | "english" | "pidgin";
+export type SpokenLanguage = "english" | "pidgin" | "yoruba" | "igbo" | "hausa" | "fulani";
+export type ChatLanguage = "auto" | SpokenLanguage;
+
+export type NotificationVM = { id: string; title: string; body: string; at: string; read: boolean };
 
 export type VetVM = {
   name: string;
@@ -89,6 +92,8 @@ export type ChatReply = {
   text: string;
   pending: { id: string; summary: string } | null;
   sessionId?: string;
+  /** The language the reply is in, so it can be read aloud with the right voice. */
+  replyLanguage?: SpokenLanguage;
   vets?: VetVM[] | null;
   searchUrl?: string | null;
   /** The app should ask the phone for its location and send the same message again. */

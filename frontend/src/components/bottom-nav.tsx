@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { NotificationBell } from "@/components/notification-bell";
 import { Logo } from "@/components/ui";
 
 // `primary` items also appear in the phone's bottom bar (max 5 so it stays readable).
@@ -96,9 +97,12 @@ export function SideNav({
   return (
     <aside className="sticky top-0 hidden h-dvh flex-col justify-between bg-forest p-5 text-lime lg:flex">
       <div>
-        <Link href="/" aria-label="FarmAs home" className="block px-2 pb-8">
-          <Logo light />
-        </Link>
+        <div className="flex items-center justify-between pb-8 pr-1">
+          <Link href="/" aria-label="FarmAs home" className="block px-2">
+            <Logo light />
+          </Link>
+          <NotificationBell tone="light" />
+        </div>
         <nav aria-label="Primary">
           <ul className="space-y-1">
             {items.map((i) => {

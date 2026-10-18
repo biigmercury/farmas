@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from app import ai_client
 from app.health import DISCLAIMER, retriever
 
-Language = Literal["auto", "english", "pidgin"]
+Language = Literal["auto", "english", "pidgin", "yoruba", "igbo", "hausa", "fulani"]
 
 
 class Turn(BaseModel):
@@ -57,7 +57,14 @@ Rules:
 LANGUAGE_RULE = {
     "english": "Reply in simple English.",
     "pidgin": "Reply in simple Nigerian Pidgin (for example: 'Your goat dey cough? Make you...'), easy to read.",
-    "auto": "Reply in the same language style the farmer used: Nigerian Pidgin if they wrote Pidgin, otherwise simple English.",
+    "yoruba": "Reply in simple, everyday Yoruba that a farmer can read. Keep numbers, naira amounts and animal names clear.",
+    "igbo": "Reply in simple, everyday Igbo that a farmer can read. Keep numbers, naira amounts and animal names clear.",
+    "hausa": "Reply in simple, everyday Hausa that a farmer can read. Keep numbers, naira amounts and animal names clear.",
+    "fulani": "Reply in simple Fulani (Fulfulde) in Latin letters. If you are not sure of a word, use a short English or Hausa word instead of guessing.",
+    "auto": (
+        "Reply in the same language the farmer wrote in: Nigerian Pidgin, Yoruba, Igbo, Hausa or Fulani if they wrote "
+        "in it, otherwise simple English."
+    ),
 }
 
 

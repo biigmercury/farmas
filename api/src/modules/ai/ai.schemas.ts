@@ -6,7 +6,7 @@ export const aiMessageSchema = z.object({
   mode: z.enum(["AGENT", "CHAT"]).default("AGENT"),
   /** Continue an earlier conversation. Omit to start a new one. */
   sessionId: z.string().min(1).max(40).optional(),
-  language: z.enum(["auto", "english", "pidgin"]).default("auto"),
+  language: z.enum(["auto", "english", "pidgin", "yoruba", "igbo", "hausa", "fulani"]).default("auto"),
   location: z
     .object({
       lat: z.number().min(-90).max(90),
@@ -14,6 +14,13 @@ export const aiMessageSchema = z.object({
     })
     .optional(),
   locationDenied: z.boolean().optional(),
+});
+
+export const speakSchema = z.object({
+  text: z.string().trim().min(1, "Nothing to read aloud.").max(1500, "That is too long to read aloud."),
+  language: z.enum(["english", "pidgin", "yoruba", "igbo", "hausa", "fulani"]).default("english"),
+  /** mp3 plays everywhere; opus is the format WhatsApp plays as a voice note. */
+  format: z.enum(["mp3", "opus"]).default("mp3"),
 });
 
 export const confirmActionSchema = z.object({

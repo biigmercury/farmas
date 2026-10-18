@@ -10,14 +10,23 @@ import {
 import { ApiError } from "../../utils/apiError";
 import { logger } from "../../utils/logger";
 import { isAffirmative, isNegative, naira } from "../../utils/format";
-import { DEFAULT_LANG, animals, t, type Lang } from "../../utils/lang";
+import {
+  DEFAULT_LANG,
+  animals,
+  baseLang,
+  minConfidence,
+  needsTranslation,
+  t,
+  type Lang,
+  type ReplyLang,
+} from "../../utils/lang";
+import { DAY_MS, lagosDateTime, parseLagosLocal } from "../../utils/time";
 import { evaluateFarm } from "../farm/alertEngine.service";
 import { adjustInventory } from "../farm/inventory.service";
 import { assessAndRecord } from "../health/health.service";
+import { createReminder } from "../notifications/reminders.service";
+import { answerHistory, searchConversations } from "./history.service";
 import { runQuery } from "./query.service";
-
-const MIN_CREATE_CONFIDENCE = 0.6;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 const LIVESTOCK_TYPES: LivestockType[] = ["POULTRY", "GOAT", "SHEEP", "CATTLE", "PIG", "RABBIT", "FISH"];
 
@@ -38,6 +47,7 @@ const ACTION_LABELS: Record<string, string> = {
   CREATE_FEED_RECORD: "Feed record",
   CREATE_HEALTH_RECORD: "Health record",
   REMOVE_LIVESTOCK: "Livestock removal",
+  CREATE_REMINDER: "Reminder",
 };
 
 const EXAMPLES: Record<string, string> = {
@@ -47,6 +57,7 @@ const EXAMPLES: Record<string, string> = {
   CREATE_FEED_RECORD: "I give dem 5 bags feed for 45k",
   CREATE_HEALTH_RECORD: "300 birds don kpai since morning",
   REMOVE_LIVESTOCK: "Thieves took 5 goats",
+  CREATE_REMINDER: "Remind me to vaccinate my goats on Friday at 8am",
   QUERY_EXPENSES: "How much I spend this month?",
   QUERY_PROFIT: "How much profit I make?",
   QUERY_SALES: "How much I don sell?",
@@ -84,8 +95,8 @@ export interface ProcessInputOptions {
   channel: "APP" | "WHATSAPP";
   /** The conversation this message belongs to (app chats). */
   sessionId?: string;
-  /** "auto" mirrors the farmer; "english" / "pidgin" force the reply language. */
-  language?: "auto" | "english" | "pidgin";
+  /** "auto" mirrors the farmer; any other value forces the reply language. */
+  language?: "auto" | ReplyLang;
   /** Earlier messages in this conversation, so follow-ups make sense. */
   history?: Array<{ role: "user" | "assistant"; content: string }>;
 }
@@ -98,7 +109,13 @@ interface FarmContext {
 
 export interface ResolvedAction {
   intent: NluIntent;
+  /** English or Pidgin: the version of our built-in sentences used. */
   lang: Lang;
+  /** The language the farmer reads. Yoruba, Igbo, Hausa and Fulani replies are translated from `lang`. */
+  replyLang?: ReplyLang;
+  remindAt?: string;
+  reminderTitle?: string;
+  reminderKind?: "VACCINATION" | "GENERAL";
   date: string;
   amount?: number;
   category?: string;
@@ -213,10 +230,11 @@ export function resolveAction(
   entities: NluEntities,
   context: FarmContext,
   rawInput: string,
-  lang: Lang = DEFAULT_LANG
+  lang: Lang = DEFAULT_LANG,
+  replyLang: ReplyLang = lang
 ): ResolvedAction {
   const date = parseHumanDate(entities.date) ?? new Date();
-  const base: ResolvedAction = { intent, lang, date: date.toISOString() };
+  const base: ResolvedAction = { intent, lang, replyLang, date: date.toISOString() };
 
   switch (intent) {
     case "CREATE_EXPENSE":
@@ -278,6 +296,16 @@ export function resolveAction(
         removeReason: entities.reason,
         description: entities.description,
       };
+    case "CREATE_REMINDER": {
+      const when = parseLagosLocal(entities.remind_at);
+      return {
+        ...base,
+        reminderTitle: entities.reminder_title?.trim() || entities.description?.trim() || undefined,
+        reminderKind: entities.reminder_kind === "VACCINATION" ? "VACCINATION" : "GENERAL",
+        remindAt: when?.toISOString(),
+        livestockType: resolveLivestockType(entities, context),
+      };
+    }
     default:
       return base;
   }
@@ -319,6 +347,13 @@ function findMissing(data: ResolvedAction): string[] {
         missing.push(
           t(lang, "why they are leaving: lost or stolen, or eaten at home", "wetin happen to dem: lost or stolen, or una chop dem for house")
         );
+      break;
+    case "CREATE_REMINDER":
+      if (!data.reminderTitle) missing.push(t(lang, "what to remind you about", "wetin I go remind you about"));
+      if (!data.remindAt)
+        missing.push(t(lang, "the day and time (for example Friday 8am)", "the day and time (for example Friday 8am)"));
+      else if (new Date(data.remindAt).getTime() < Date.now() + 30_000)
+        missing.push(t(lang, "a time in the future (that time has already passed)", "a time wey never reach (that time don pass)"));
       break;
     default:
       break;
@@ -365,6 +400,8 @@ export function summarizeAction(data: ResolvedAction): string {
       return `you want to remove ${animals(data.livestockType, data.quantity ?? 0)} (${
         data.removeReason === "CONSUMED" ? "eaten or slaughtered at home" : "lost or stolen"
       })`;
+    case "CREATE_REMINDER":
+      return `you want a reminder: "${data.reminderTitle ?? "Reminder"}" on ${data.remindAt ? lagosDateTime(data.remindAt) : "a day to be set"}`;
     default:
       return "you want to record something";
   }
@@ -403,50 +440,80 @@ async function createPendingAction(
   );
 }
 
-async function routeInput(opts: ProcessInputOptions, text: string): Promise<string> {
+/** Put one of our English/Pidgin sentences into the language the farmer reads. */
+async function localize(text: string, replyLang: ReplyLang): Promise<string> {
+  return needsTranslation(replyLang) ? mlClient.translate(text, replyLang) : text;
+}
+
+async function routeInput(
+  opts: ProcessInputOptions,
+  text: string,
+  out: { replyLang?: ReplyLang }
+): Promise<string> {
   const context = await buildFarmContext(opts.farmId);
   const nlu = await mlClient.extract(text, { ...context.mlContext, history: opts.history ?? [] });
   // The farmer can force the reply language; otherwise we mirror how they wrote.
-  const lang: Lang = opts.language && opts.language !== "auto" ? opts.language : nlu.language ?? DEFAULT_LANG;
+  const replyLang: ReplyLang = opts.language && opts.language !== "auto" ? opts.language : nlu.language ?? DEFAULT_LANG;
+  const lang = baseLang(replyLang);
+  out.replyLang = replyLang;
 
-  if (nlu.intent.startsWith("QUERY_")) {
-    return runQuery(opts.farmId, nlu.intent, nlu.entities, lang);
+  if (nlu.intent.startsWith("QUERY_") && nlu.intent !== "QUERY_HISTORY") {
+    return localize(await runQuery(opts.farmId, nlu.intent, nlu.entities, lang), replyLang);
+  }
+
+  if (nlu.intent === "QUERY_HISTORY") {
+    return localize(await answerHistory(opts.farmId, nlu.entities, lang), replyLang);
+  }
+
+  if (nlu.intent === "SEARCH_CONVERSATIONS") {
+    return localize(await searchConversations(opts.farmId, opts.userId, nlu.entities, lang), replyLang);
   }
 
   if (nlu.intent.startsWith("CREATE_") || nlu.intent === "REMOVE_LIVESTOCK") {
-    if (nlu.confidence < MIN_CREATE_CONFIDENCE) {
+    if (nlu.confidence < minConfidence(replyLang)) {
       const example = EXAMPLES[nlu.intent] ?? EXAMPLES.CREATE_EXPENSE;
       const pct = Math.round(nlu.confidence * 100);
-      return t(
-        lang,
-        `I'm not sure what you mean (${pct}% sure), and I don't want to record it wrongly. Please say it again, e.g. "${example}".`,
-        `I no too sure about wetin you mean (${pct}% sure), so I no wan enter am wrong. Abeg say am again, e.g. "${example}".`
+      return localize(
+        t(
+          lang,
+          `I'm not sure what you mean (${pct}% sure), and I don't want to record it wrongly. Please say it again, e.g. "${example}".`,
+          `I no too sure about wetin you mean (${pct}% sure), so I no wan enter am wrong. Abeg say am again, e.g. "${example}".`
+        ),
+        replyLang
       );
     }
 
-    const resolved = resolveAction(nlu.intent, nlu.entities, context, text, lang);
+    const resolved = resolveAction(nlu.intent, nlu.entities, context, text, lang, replyLang);
     const missing = findMissing(resolved);
     if (missing.length > 0) {
-      return askForMissing(nlu.intent, missing, lang);
+      return localize(askForMissing(nlu.intent, missing, lang), replyLang);
     }
-    return createPendingAction(opts.farmId, text, nlu, resolved);
+    return localize(await createPendingAction(opts.farmId, text, nlu, resolved), replyLang);
   }
 
-  return unknownReply(lang, text);
+  return localize(unknownReply(lang, text), replyLang);
 }
 
-export async function processInput(opts: ProcessInputOptions): Promise<string> {
+/** Like processInput, but also says which language the reply is in (so the app can read it aloud with the right voice). */
+export async function processInputDetailed(
+  opts: ProcessInputOptions
+): Promise<{ reply: string; replyLang: ReplyLang }> {
   const text = opts.text.trim();
-  if (!text) return "I did not catch anything. Please type your message again.";
+  if (!text) return { reply: "I did not catch anything. Please type your message again.", replyLang: DEFAULT_LANG };
 
+  const forced = opts.language && opts.language !== "auto" ? opts.language : undefined;
+  let replyLang: ReplyLang = forced ?? DEFAULT_LANG;
   let reply: string;
   try {
     // A plain "yes" or "no" answers the open "save this?" question. No AI call needed (cheaper and faster).
     const pending = await getPendingAction(opts.farmId);
     if (pending && (isAffirmative(text) || isNegative(text))) {
-      reply = await confirmAction(pending.id, opts.farmId, isAffirmative(text));
+      replyLang = forced ?? (pending.extractedEntities as { replyLang?: ReplyLang } | null)?.replyLang ?? DEFAULT_LANG;
+      reply = await confirmAction(pending.id, opts.farmId, isAffirmative(text), forced);
     } else {
-      reply = await routeInput(opts, text);
+      const out: { replyLang?: ReplyLang } = {};
+      reply = await routeInput(opts, text, out);
+      replyLang = out.replyLang ?? replyLang;
     }
   } catch (err) {
     if (err instanceof MlServiceError) {
@@ -471,7 +538,11 @@ export async function processInput(opts: ProcessInputOptions): Promise<string> {
     logger.error({ err, farmId: opts.farmId }, "Failed to persist AI conversation");
   }
 
-  return reply;
+  return { reply, replyLang };
+}
+
+export async function processInput(opts: ProcessInputOptions): Promise<string> {
+  return (await processInputDetailed(opts)).reply;
 }
 
 export async function getPendingAction(farmId: string) {
@@ -479,6 +550,19 @@ export async function getPendingAction(farmId: string) {
     where: { farmId, confirmationStatus: "PENDING" },
     orderBy: { createdAt: "desc" },
   });
+}
+
+/** The open "save this?" question, as the app shows it (the summary is in the farmer's language). */
+export async function getPendingView(
+  farmId: string,
+  forceLang?: ReplyLang
+): Promise<{ id: string; summary: string; intent: string } | null> {
+  const pending = await getPendingAction(farmId);
+  if (!pending) return null;
+  const replyLang =
+    forceLang ?? (pending.extractedEntities as { replyLang?: ReplyLang } | null)?.replyLang ?? DEFAULT_LANG;
+  const summary = pending.actionTaken.replace(/^Create [^:]+: /, "");
+  return { id: pending.id, summary: await localize(summary, replyLang), intent: pending.detectedIntent };
 }
 
 async function findBatchId(farmId: string, livestockType?: LivestockType): Promise<string | null> {
@@ -598,6 +682,23 @@ async function executeAction(
       };
     }
 
+    case "CREATE_REMINDER": {
+      if (!data.reminderTitle || !data.remindAt) throw new Error("Reminder resolved without title or time");
+      const task = await createReminder(farmId, {
+        title: data.reminderTitle,
+        dueAt: new Date(data.remindAt),
+        kind: data.reminderKind,
+      });
+      return {
+        id: task.id,
+        message: t(
+          data.lang,
+          `Done! I will remind you on ${lagosDateTime(data.remindAt)}: ${data.reminderTitle}. You will see it in the app, and as a notification if you turned notifications on.`,
+          `Done! I go remind you on ${lagosDateTime(data.remindAt)}: ${data.reminderTitle}. You go see am for the app, and as notification if you turn notifications on.`
+        ),
+      };
+    }
+
     case "CREATE_FEED_RECORD": {
       const feedType = data.feedType ?? "General feed";
       const record = await prisma.feedRecord.create({
@@ -639,6 +740,20 @@ async function executeAction(
 }
 
 export async function confirmAction(
+  actionLogId: string,
+  farmId: string,
+  isConfirmed: boolean,
+  forceLang?: ReplyLang
+): Promise<string> {
+  const log = await prisma.aiActionLog.findFirst({
+    where: { id: actionLogId, farmId },
+    select: { extractedEntities: true },
+  });
+  const replyLang = forceLang ?? (log?.extractedEntities as { replyLang?: ReplyLang } | null)?.replyLang ?? DEFAULT_LANG;
+  return localize(await confirmActionInner(actionLogId, farmId, isConfirmed), replyLang);
+}
+
+async function confirmActionInner(
   actionLogId: string,
   farmId: string,
   isConfirmed: boolean

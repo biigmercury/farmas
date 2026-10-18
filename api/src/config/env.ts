@@ -22,6 +22,12 @@ const envSchema = z.object({
   WHATSAPP_GRAPH_API_VERSION: z.string().default("v20.0"),
   // From the Meta app dashboard. Needed to check that webhook calls really come from WhatsApp.
   WHATSAPP_APP_SECRET: z.string().default(""),
+  // Phone push notifications (Web Push). Optional: without keys, reminders still show in the app's bell.
+  VAPID_PUBLIC_KEY: z.string().default(""),
+  VAPID_PRIVATE_KEY: z.string().default(""),
+  VAPID_SUBJECT: z.string().default("https://farmas-six.vercel.app"),
+  // Shared secret for the WhatsApp bridge, so only it can collect the messages waiting to be sent.
+  WHATSAPP_BRIDGE_KEY: z.string().default(""),
   // How many proxies sit between the internet and this API (Render/Railway: 1; with Cloudflare in front: 2).
   // Unset = 1 in production, 0 locally.
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).optional(),

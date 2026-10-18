@@ -47,5 +47,10 @@ REQUEST_TIMEOUT_S = int(_get("AI_TIMEOUT_S", "20"))
 # "busy, try again" within about half a minute, never a long hang.
 DEADLINE_S = int(_get("AI_DEADLINE_S", "30"))
 
+# Text to speech (reading the AI's answers aloud). Tried in order.
+OPENAI_TTS_MODEL = _get("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+OPENAI_TTS_FALLBACK_MODELS = _list("OPENAI_TTS_FALLBACK_MODELS", "tts-1")
+TTS_MAX_CHARS = 1500
+
 MAX_AUDIO_BYTES = 16 * 1024 * 1024
 MAX_IMAGE_BYTES = 8 * 1024 * 1024

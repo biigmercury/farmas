@@ -24,6 +24,16 @@ export const taskActionSchema = z.object({
   status: z.enum(["PENDING", "DONE"]),
 });
 
+export const createTaskSchema = z.object({
+  title: z.string().trim().min(2, "Give the reminder a name.").max(120),
+  /** When it is due (an ISO date and time). */
+  dueDate: z.string().refine((v) => !Number.isNaN(new Date(v).getTime()), "Enter a valid date and time."),
+  category: z
+    .enum(["VACCINATION", "MEDICATION", "FEEDING", "CLEANING", "VET_VISIT", "SALES", "GENERAL"])
+    .default("GENERAL"),
+  description: z.string().trim().max(300).optional(),
+});
+
 export const addLivestockSchema = z.object({
   type: z.enum(["POULTRY", "GOAT", "SHEEP", "CATTLE", "PIG", "RABBIT", "FISH"]),
   quantity: z.coerce.number().int().min(1, "Quantity must be at least 1.").max(1_000_000),

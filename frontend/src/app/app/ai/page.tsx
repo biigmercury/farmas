@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
 import { VetCards } from "@/components/vets";
 import { useRecorder } from "@/hooks/use-recorder";
+import { useSpeech } from "@/hooks/use-speech";
 import { ApiError } from "@/lib/api";
 import { GeoError, getPosition } from "@/lib/geo";
-import type { ChatLanguage, ChatMode, SessionSummary, VetVM } from "@/lib/types";
+import type { ChatLanguage, ChatMode, SessionSummary, SpokenLanguage, VetVM } from "@/lib/types";
 import {
   confirmAction,
   isDemoAgent,
@@ -25,6 +26,8 @@ type Msg = {
   resolved?: boolean;
   vets?: VetVM[];
   searchUrl?: string;
+  /** The language this reply is in (for reading it aloud). */
+  lang?: SpokenLanguage;
 };
 
 const GREETING: Record<ChatMode, string> = {
@@ -46,14 +49,20 @@ const LANGS: { key: ChatLanguage; label: string }[] = [
   { key: "auto", label: "Auto" },
   { key: "english", label: "English" },
   { key: "pidgin", label: "Pidgin" },
+  { key: "yoruba", label: "Yoruba (beta)" },
+  { key: "igbo", label: "Igbo (beta)" },
+  { key: "hausa", label: "Hausa (beta)" },
+  { key: "fulani", label: "Fulani (beta)" },
 ];
+
+const LANGUAGE_KEYS: ChatLanguage[] = ["english", "pidgin", "yoruba", "igbo", "hausa", "fulani"];
 
 const LANG_KEY = "farmas.chatLanguage";
 
 function readLanguage(): ChatLanguage {
   try {
     const v = localStorage.getItem(LANG_KEY);
-    return v === "english" || v === "pidgin" ? v : "auto";
+    return LANGUAGE_KEYS.find((k) => k === v) ?? "auto";
   } catch {
     return "auto";
   }
@@ -75,6 +84,8 @@ export default function AiChat() {
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
   const [historyError, setHistoryError] = useState("");
   const [transcribing, setTranscribing] = useState(false);
+  // True when the farmer spoke this message: then the answer is read aloud too, without a tap.
+  const spoke = useRef(false);
   const end = useRef<HTMLDivElement>(null);
   const nextId = useRef(1);
   const rec = useRecorder();
@@ -83,7 +94,17 @@ export default function AiChat() {
     end.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs]);
 
-  const push = (m: Omit<Msg, "id">) => setMsgs((p) => [...p, { ...m, id: `m${nextId.current++}` }]);
+  const push = (m: Omit<Msg, "id">): string => {
+    const id = `m${nextId.current++}`;
+    setMsgs((p) => [...p, { ...m, id }]);
+    return id;
+  };
+
+  const speech = useSpeech(setNotice);
+  const { listening, prime: primeAudio, stop: stopListening } = speech;
+  const listenTo = (id: string, text: string, lang?: SpokenLanguage) =>
+    void speech.listen(id, text, lang ?? (language === "auto" ? "english" : language));
+
   const errorText = (e: unknown) => (e instanceof ApiError ? e.message : "Something went wrong. Please try again.");
 
   function chooseLanguage(l: ChatLanguage) {
@@ -103,6 +124,7 @@ export default function AiChat() {
     setInput("");
     setNotice("");
     setShowHistory(false);
+    stopListening();
   }
 
   async function send(text: string) {
@@ -110,6 +132,9 @@ export default function AiChat() {
     if (!t || busy) return;
     setInput("");
     setNotice("");
+    const readBack = spoke.current;
+    spoke.current = false;
+    if (readBack) primeAudio(); // we are inside the Send tap right now: the one moment the browser lets us unlock sound
     // A new message cancels any older "save this?" question (the server does the same).
     setMsgs((p) => p.map((m) => (m.pending && !m.resolved ? { ...m, resolved: true } : m)));
     push({ who: "you", text: t });
@@ -133,13 +158,15 @@ export default function AiChat() {
         setSessionId(sid);
       }
 
-      push({
+      const replyId = push({
         who: "farmas",
         text: r.text,
+        lang: r.replyLanguage,
         pending: r.pending ?? undefined,
         vets: r.vets ?? undefined,
         searchUrl: r.searchUrl ?? undefined,
       });
+      if (readBack && !r.needsLocation) listenTo(replyId, r.text, r.replyLanguage);
     } catch (e) {
       push({ who: "farmas", text: errorText(e) });
     } finally {
@@ -172,8 +199,9 @@ export default function AiChat() {
       }
       setTranscribing(true);
       try {
-        const text = await transcribeAudio(blob);
+        const text = await transcribeAudio(blob, language);
         setInput((cur) => (cur ? `${cur} ${text}` : text));
+        spoke.current = true; // the farmer spoke, so the answer will be read aloud when they send
         setNotice("Check the words, fix anything that is wrong, then tap Send.");
         document.getElementById("msg")?.focus();
       } catch (e) {
@@ -346,6 +374,17 @@ export default function AiChat() {
                 }`}
               >
                 <p className="whitespace-pre-line">{m.text}</p>
+                {m.who === "farmas" && m.id !== "typing" && (
+                  <button
+                    type="button"
+                    onClick={() => listenTo(m.id, m.text, m.lang)}
+                    aria-label={listening?.id === m.id ? "Stop reading aloud" : "Listen to this reply"}
+                    className="label mt-2 inline-flex min-h-11 items-center gap-2 rounded-full border border-forest/30 px-4"
+                  >
+                    <SpeakerIcon />
+                    {listening?.id === m.id ? (listening.state === "loading" ? "Loading…" : "Stop") : "Listen"}
+                  </button>
+                )}
                 {m.vets && m.vets.length > 0 && <VetCards vets={m.vets} searchUrl={m.searchUrl} />}
                 {m.vets && m.vets.length === 0 && m.searchUrl && (
                   <a
@@ -448,6 +487,14 @@ export default function AiChat() {
         </>
       )}
     </div>
+  );
+}
+
+function SpeakerIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M11 5 6 9H3v6h3l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+    </svg>
   );
 }
 

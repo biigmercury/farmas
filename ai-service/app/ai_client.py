@@ -242,21 +242,58 @@ def generate_text(
     return text
 
 
-def transcribe(*, data: bytes, filename: str, mime: str, prompt: str = "") -> str:
-    """Speech to text. `prompt` can hint spelling and vocabulary (for example Pidgin words)."""
+def transcribe(*, data: bytes, filename: str, mime: str, prompt: str = "", language: str = "") -> str:
+    """Speech to text. `prompt` can hint spelling and vocabulary (for example Pidgin words).
+
+    `language` is an ISO-639-1 code (yo, ha, ig...). If the provider rejects it for a model, we retry without it
+    so the farmer still gets a transcript.
+    """
     client = _get_client()
     models = [config.OPENAI_STT_MODEL] + [m for m in config.OPENAI_STT_FALLBACK_MODELS if m != config.OPENAI_STT_MODEL]
 
+    def run(with_language: bool):
+        def make(model: str, timeout: float):
+            kwargs: dict = dict(model=model, file=(filename, data, mime))
+            if prompt:
+                kwargs["prompt"] = prompt
+            if with_language and language:
+                kwargs["language"] = language
+            return client.with_options(timeout=timeout).audio.transcriptions.create(**kwargs)
+
+        return _call_with_fallback(make, models)
+
+    try:
+        try:
+            result = run(True)
+        except Exception as e:  # noqa: BLE001
+            if not language or _is_transient(e) or _is_out_of_credit(e):
+                raise
+            result = run(False)  # the language code was not accepted: transcribe without it
+    except AiUnavailable:
+        raise
+    except Exception as e:
+        raise AiUnavailable(f"The transcription request failed ({_reason(e)})") from e
+    return (getattr(result, "text", "") or "").strip()
+
+
+def speak(*, text: str, voice: str = "alloy", instructions: str = "", fmt: str = "mp3") -> bytes:
+    """Text to speech. `fmt` is "mp3" or "opus" (opus = the Ogg format WhatsApp plays as a voice note)."""
+    client = _get_client()
+    models = [config.OPENAI_TTS_MODEL] + [m for m in config.OPENAI_TTS_FALLBACK_MODELS if m != config.OPENAI_TTS_MODEL]
+
     def make(model: str, timeout: float):
-        kwargs: dict = dict(model=model, file=(filename, data, mime))
-        if prompt:
-            kwargs["prompt"] = prompt
-        return client.with_options(timeout=timeout).audio.transcriptions.create(**kwargs)
+        kwargs: dict = dict(model=model, voice=voice, input=text, response_format=fmt)
+        if instructions and model.startswith("gpt-4o"):  # only the newer voice models take speaking instructions
+            kwargs["instructions"] = instructions
+        return client.with_options(timeout=timeout).audio.speech.create(**kwargs)
 
     try:
         result = _call_with_fallback(make, models)
     except AiUnavailable:
         raise
     except Exception as e:
-        raise AiUnavailable(f"The transcription request failed ({_reason(e)})") from e
-    return (getattr(result, "text", "") or "").strip()
+        raise AiUnavailable(f"The speech request failed ({_reason(e)})") from e
+    data = result.read() if hasattr(result, "read") else getattr(result, "content", b"")
+    if not data:
+        raise AiUnavailable("The speech request returned no audio.")
+    return data

@@ -1,3 +1,4 @@
+import type { TaskCategory } from "@prisma/client";
 import { Router } from "express";
 import { prisma } from "../../config/prisma";
 import { requireAuth } from "../../middlewares/auth.middleware";
@@ -6,6 +7,7 @@ import { requireFarmAccess } from "../../middlewares/tenant.middleware";
 import { validate } from "../../middlewares/validate.middleware";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { aiRoutes } from "../ai/ai.routes";
+import { notificationRoutes } from "../notifications/notifications.routes";
 import { healthRoutes } from "../health/health.routes";
 import { findNearbyVets } from "../vets/vets.service";
 import { getDashboard } from "./dashboard.service";
@@ -14,6 +16,7 @@ import {
   addLivestockSchema,
   alertActionSchema,
   createFarmSchema,
+  createTaskSchema,
   farmParamsSchema,
   listQuerySchema,
   nearbyVetsQuerySchema,
@@ -117,6 +120,38 @@ farmRoutes.get(
       prisma.task.count({ where }),
     ]);
     res.json({ success: true, data: { tasks, total, limit, offset } });
+  })
+);
+
+farmRoutes.post(
+  "/:farmId/tasks",
+  validate(createTaskSchema),
+  asyncHandler(async (req, res) => {
+    const body = req.body as { title: string; dueDate: string; category: TaskCategory; description?: string };
+    const task = await prisma.task.create({
+      data: {
+        farmId: req.params.farmId,
+        title: body.title,
+        dueDate: new Date(body.dueDate),
+        category: body.category,
+        description: body.description,
+      },
+    });
+    res.status(201).json({ success: true, data: { task } });
+  })
+);
+
+farmRoutes.delete(
+  "/:farmId/tasks/:taskId",
+  asyncHandler(async (req, res) => {
+    const { farmId, taskId } = req.params;
+    const existing = await prisma.task.findFirst({ where: { id: taskId, farmId } });
+    if (!existing) {
+      res.status(404).json({ success: false, error: { message: "Task no dey find.", code: "NOT_FOUND" } });
+      return;
+    }
+    await prisma.task.delete({ where: { id: taskId } });
+    res.json({ success: true, data: { deleted: true } });
   })
 );
 
@@ -237,5 +272,6 @@ farmRoutes.get(
   })
 );
 
+farmRoutes.use("/:farmId", notificationRoutes);
 farmRoutes.use("/:farmId/ai", aiLimiter, aiRoutes);
 farmRoutes.use("/:farmId/health", healthLimiter, healthRoutes);

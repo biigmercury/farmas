@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Card, Tag } from "@/components/ui";
 import { ErrorBox, Loading } from "@/components/states";
 import { useAsync } from "@/hooks/use-async";
@@ -71,6 +72,8 @@ export default function Finance() {
             </Card>
           </div>
 
+          <TaxEstimate revenue={data.revenue} expenses={data.expenses} profit={data.profit} />
+
           <div className="grid gap-4 lg:grid-cols-2 lg:gap-6">
             <Rows title="Recent sales" rows={data.sales} empty="No sales yet." />
             <Rows title="Recent expenses" rows={data.expenseRows} empty="No expenses yet." />
@@ -103,5 +106,83 @@ function Rows({ title, rows, empty }: { title: string; rows: MoneyRow[]; empty: 
         </ul>
       )}
     </Card>
+  );
+}
+
+/** A simple "how much tax might I owe?" estimate from the farmer's own profit. A prototype, not tax advice. */
+function TaxEstimate({ revenue, expenses, profit }: { revenue: number; expenses: number; profit: number }) {
+  const [rate, setRate] = useState("10");
+  const [deductions, setDeductions] = useState("0");
+
+  const pct = Math.min(100, Math.max(0, Number(rate) || 0));
+  const extra = Math.max(0, Number(deductions.replace(/,/g, "")) || 0);
+  const taxable = Math.max(0, profit - extra);
+  const tax = Math.round((taxable * pct) / 100);
+  const afterTax = profit - tax;
+
+  return (
+    <Card className="!p-5 lg:!p-6">
+      <p className="label mb-1"><Tag>Tax estimate</Tag></p>
+      <p className="text-forest/75">
+        A quick estimate from your recorded profit. Change the rate to match your situation. Prototype only: this is not
+        tax advice, so ask a tax adviser before you rely on it.
+      </p>
+
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="tax-rate" className="mb-2 block font-bold">Tax rate (%)</label>
+          <input
+            id="tax-rate"
+            inputMode="decimal"
+            value={rate}
+            onChange={(e) => setRate(e.target.value.replace(/[^\d.]/g, "").slice(0, 5))}
+            className="min-h-12 w-full rounded-2xl border border-forest/20 bg-white px-4"
+          />
+          <p className="mt-1 text-sm text-forest/65">10 is only an example.</p>
+        </div>
+        <div>
+          <label htmlFor="tax-ded" className="mb-2 block font-bold">
+            Other deductions (₦) <span className="label ml-2 font-normal opacity-60">Optional</span>
+          </label>
+          <input
+            id="tax-ded"
+            inputMode="numeric"
+            value={deductions}
+            onChange={(e) => setDeductions(e.target.value.replace(/[^\d,]/g, "").slice(0, 14))}
+            className="min-h-12 w-full rounded-2xl border border-forest/20 bg-white px-4"
+          />
+          <p className="mt-1 text-sm text-forest/65">Costs you did not record, taken off before tax.</p>
+        </div>
+      </div>
+
+      <dl className="mt-5 grid gap-3 rounded-2xl bg-mist p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Line label="Revenue" value={naira(revenue)} />
+        <Line label="Expenses" value={naira(expenses)} />
+        <Line label="Profit before tax" value={naira(profit)} />
+        <Line label="Taxable amount" value={naira(taxable)} />
+      </dl>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl bg-forest p-4 text-lime">
+          <p className="label opacity-70">Estimated tax</p>
+          <p className="mt-1 font-mono text-2xl">{naira(tax)}</p>
+        </div>
+        <div className="rounded-2xl border border-forest/15 p-4">
+          <p className="label opacity-70">Profit after tax</p>
+          <p className="mt-1 font-mono text-2xl">{naira(afterTax)}</p>
+        </div>
+      </div>
+      {profit <= 0 && (
+        <p className="mt-3 text-sm text-forest/70">There is no profit on record yet, so the estimate is zero.</p>
+      )}
+    </Card>
+  );
+}
+
+function Line({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="label opacity-70">{label}</dt>
+      <dd className="mt-1 font-mono">{value}</dd>
+    </div>
   );
 }

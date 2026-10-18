@@ -44,16 +44,24 @@ FarmAs AI has two modes on one screen:
 
 ### Features
 
-- **Talk to record** in English or Nigerian Pidgin, with a switch to choose the reply language (Auto, English or Pidgin).
+- **Talk to record** in English or Nigerian Pidgin, and in Yoruba, Igbo, Hausa and Fulani (beta), with a switch to choose
+  the reply language (or Auto, which follows the language the farmer writes in).
 - **Voice notes**: record, check the written words, fix anything wrong, then send.
+- **Listen to replies**: a Listen button on every answer reads it aloud for farmers who prefer to listen, and when a
+  farmer speaks their question the answer is read back automatically.
 - **Conversation history**: past chats are saved and can be reopened. The AI remembers recent messages, so follow-up
   questions make sense.
 - **Inventory**: live animal counts by type, with a history of every change (bought, sold, died, lost, added).
   Deaths reported to the AI come off the count automatically.
 - **Health risk check**: describe symptoms (and add a photo) to get a risk level, possible concerns and safe next steps.
   A rule-based safety floor can raise the risk but never lower it, and every result says a vet must confirm.
+- **Reminders and vaccinations**: "remind me to vaccinate my goats on Friday at 8am" (or add one on the Tasks screen).
+  When the time comes it appears in the app's bell and as a phone notification.
+- **Ask about the past**: "How many birds died in September?", "What did I sell last week?", "What did I tell you about
+  the sick goats?". Answers come from the stored records and the farmer's saved chats.
 - **Early warnings**: a mortality alert for recent deaths, health alerts, and task reminders such as vaccinations.
-- **Finance**: revenue, expenses, profit and an expense breakdown, built from what the farmer tells the AI.
+- **Finance**: revenue, expenses, profit and an expense breakdown, built from what the farmer tells the AI, plus a
+  simple adjustable tax estimate (a prototype, not tax advice).
 - **Dashboard**: a recent-activity table of sales, expenses, purchases and deaths.
 - **Nearest vet**: with the farmer's permission, the app uses the phone's location to list nearby clinics, with call and
   directions buttons and a Google Maps search.
@@ -139,7 +147,7 @@ spell can take up to a minute. A GitHub workflow (`.github/workflows/keep-alive.
 ## Tests
 
 ```
-cd ai-service && .venv\Scripts\python -m pytest -q       # 40 offline tests, no API key needed
+cd ai-service && .venv\Scripts\python -m pytest -q       # 51 offline tests, no API key needed
 cd api && npm run typecheck
 cd frontend && npx tsc --noEmit && npx eslint src
 ```
