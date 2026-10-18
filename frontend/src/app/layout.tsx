@@ -13,10 +13,31 @@ const onest = Onest({
   subsets: ["latin"],
 });
 
+const SITE = "https://farmas-six.vercel.app";
+const TITLE = "FarmAs — Your AI Farm Companion";
+const DESCRIPTION =
+  "FarmAs turns everyday farm conversations into intelligent records, insights, health guidance and early warnings.";
+
 export const metadata: Metadata = {
-  title: "FarmAs — Your AI Farm Companion",
-  description:
-    "FarmAs turns everyday farm conversations into intelligent records, insights, health guidance and early warnings.",
+  // Lets the share image and icons be found at full web addresses, which link previews need.
+  metadataBase: new URL(SITE),
+  title: TITLE,
+  description: DESCRIPTION,
+  applicationName: "FarmAs",
+  openGraph: {
+    type: "website",
+    siteName: "FarmAs",
+    title: TITLE,
+    description: DESCRIPTION,
+    url: SITE,
+    locale: "en_NG",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
+  appleWebApp: { capable: true, title: "FarmAs", statusBarStyle: "black-translucent" },
 };
 
 export const viewport: Viewport = {
