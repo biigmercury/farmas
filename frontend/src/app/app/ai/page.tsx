@@ -102,8 +102,13 @@ export default function AiChat() {
 
   const speech = useSpeech(setNotice);
   const { listening, prime: primeAudio, stop: stopListening } = speech;
-  const listenTo = (id: string, text: string, lang?: SpokenLanguage) =>
-    void speech.listen(id, text, lang ?? (language === "auto" ? "english" : language));
+  // Once the farmer has used Listen in this chat, new replies get their voice ready in the background, so the next tap is instant.
+  const wantsAudio = useRef(false);
+  const voiceLanguage = (lang?: SpokenLanguage): SpokenLanguage => lang ?? (language === "auto" ? "english" : language);
+  const listenTo = (id: string, text: string, lang?: SpokenLanguage) => {
+    wantsAudio.current = true;
+    void speech.listen(id, text, voiceLanguage(lang));
+  };
 
   const errorText = (e: unknown) => (e instanceof ApiError ? e.message : "Something went wrong. Please try again.");
 
@@ -167,6 +172,7 @@ export default function AiChat() {
         searchUrl: r.searchUrl ?? undefined,
       });
       if (readBack && !r.needsLocation) listenTo(replyId, r.text, r.replyLanguage);
+      else if (wantsAudio.current && !r.needsLocation) speech.prefetch(replyId, r.text, voiceLanguage(r.replyLanguage));
     } catch (e) {
       push({ who: "farmas", text: errorText(e) });
     } finally {
@@ -382,7 +388,7 @@ export default function AiChat() {
                     className="label mt-2 inline-flex min-h-11 items-center gap-2 rounded-full border border-forest/30 px-4"
                   >
                     <SpeakerIcon />
-                    {listening?.id === m.id ? (listening.state === "loading" ? "Loading…" : "Stop") : "Listen"}
+                    {listening?.id === m.id ? (listening.state === "loading" ? "Preparing…" : "Stop") : "Listen"}
                   </button>
                 )}
                 {m.vets && m.vets.length > 0 && <VetCards vets={m.vets} searchUrl={m.searchUrl} />}

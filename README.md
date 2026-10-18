@@ -1,6 +1,6 @@
 # FarmAs: Your AI Farm Companion
 
-> Talk to your farm the way you talk. FarmAs turns everyday English and Nigerian Pidgin into farm records, answers
+> Talk to your farm the way you talk. FarmAs turns everyday English, Nigerian Pidgin, Yoruba, Igbo, Hausa and Fulani into farm records, answers
 > your questions, checks animal health and warns you early when something looks wrong.
 
 **Live app:** https://farmas-six.vercel.app
@@ -25,7 +25,7 @@ On the login page, tap **Use demo account** to explore a ready-made farm (Dons F
 
 Most small and medium livestock farmers in Nigeria keep their records in their heads or in a notebook. They do not
 know their real profit, they spot a disease outbreak only when animals are already dying, and apps that ask for long
-forms get abandoned. Farmers think and speak in English and Pidgin, not in spreadsheets.
+forms get abandoned. Farmers think and speak in English, Pidgin and their own languages, not in spreadsheets.
 
 ## Our solution
 

@@ -7,10 +7,19 @@ import { backendConfigured } from "@/lib/api";
 const START = backendConfigured ? "/signup" : "/onboarding";
 
 const loop = [
-  { n: "01", t: "Talk", d: "Type or send a voice note in English or Pidgin — in the app or on WhatsApp." },
+  { n: "01", t: "Talk", d: "Type or send a voice note in English, Pidgin, Yoruba, Igbo, Hausa or Fulani — in the app or on WhatsApp." },
   { n: "02", t: "Record", d: "FarmAs pulls out the purchase, sale, feed or health note and asks you to confirm." },
   { n: "03", t: "Understand", d: "Spending, profit and health risk are worked out from your real records." },
   { n: "04", t: "Act", d: "Reminders and early warnings tell you what needs attention before it costs you." },
+];
+
+const languages: [string, boolean][] = [
+  ["English", false],
+  ["Pidgin", false],
+  ["Yoruba", true],
+  ["Igbo", true],
+  ["Hausa", true],
+  ["Fulani", true],
 ];
 
 const pidgin = [
@@ -89,7 +98,7 @@ export default function Landing() {
           <dl className="relative mx-auto grid w-full max-w-sm grid-cols-2 gap-6 text-sm">
             <div>
               <dt className="mb-2 font-mono text-lime">[01]</dt>
-              <dd className="mb-1 font-bold">Voice + Pidgin</dd>
+              <dd className="mb-1 font-bold">Voice + your language</dd>
               <dd className="opacity-80">Speak the way you speak</dd>
             </div>
             <div>
@@ -124,10 +133,20 @@ export default function Landing() {
         <h2 className="h-display mb-3 max-w-3xl text-3xl text-lime md:text-4xl">
           Not translated. Understood.
         </h2>
-        <p className="mb-10 max-w-xl opacity-85">
-          FarmAs reads meaning and intent in Nigerian English and Pidgin, then turns it into a farm
-          action. More African languages are on the roadmap.
+        <p className="mb-6 max-w-xl opacity-85">
+          FarmAs reads meaning and intent in Nigerian English, Pidgin, Yoruba, Igbo, Hausa and Fulani,
+          then turns it into a farm action. Yoruba, Igbo, Hausa and Fulani are in beta, and more
+          African languages are on the roadmap.
         </p>
+        <ul className="mb-10 flex flex-wrap gap-2" aria-label="Languages">
+          {languages.map(([name, beta]) => (
+            <li key={name} className="label rounded-full border border-lime/40 px-4 py-2 text-lime">
+              {name}
+              {beta && <span className="ml-2 opacity-70">beta</span>}
+            </li>
+          ))}
+        </ul>
+        <p className="label mb-4 text-lime">Pidgin examples</p>
         <ul className="grid gap-3 md:grid-cols-2">
           {pidgin.map(([say, does], i) => (
             <Reveal as="li" key={say} delay={(i % 2) * 120} className="rounded-2xl border border-white/15 p-5">
