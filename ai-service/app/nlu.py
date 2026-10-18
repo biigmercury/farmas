@@ -115,9 +115,11 @@ Intents:
   lost, vaccinations, tasks, "when did I last ...", or any money question about a period that is not simply one month.
   history_topic = SALES, EXPENSES, DEATHS, HEALTH, ANIMALS, TASKS or ALL. period_start and period_end = the first and
   last day asked about (YYYY-MM-DD), null if no period was mentioned. livestock_type if an animal is named.
-- SEARCH_CONVERSATIONS: the farmer asks what THEY SAID or what the AI told them before ("what did I tell you about the
-  sick goats last week?", "remind me what you said about feed"). search_terms = the 1 to 4 most important words in
-  lower case; period_start / period_end if a time is mentioned.
+- SEARCH_CONVERSATIONS: ONLY when the farmer asks what was SAID in their chats: they use words like told, said,
+  mentioned, talked about, "you replied", "what did you say" ("what did I tell you about the sick goats last week?",
+  "remind me what you said about feed"). search_terms = the 1 to 4 most important words in lower case;
+  period_start / period_end if a time is mentioned. A question about what HAPPENED on the farm ("what did I sell",
+  "what did I buy", "how many died", "what did I spend") is NEVER this: it is QUERY_HISTORY or a QUERY_ intent.
 - QUERY_EXPENSES: asks how much was spent. QUERY_SALES: asks how much was sold/earned from sales.
   QUERY_PROFIT: asks about profit or loss. QUERY_LIVESTOCK: asks how many animals or what is on the farm.
 - UNKNOWN: greetings, thanks, unrelated chat, or anything you cannot confidently map. Give confidence below 0.5.
@@ -142,6 +144,9 @@ Examples (message -> intent; key entities):
 "Remind me to vaccinate my goats on Friday" -> CREATE_REMINDER; reminder_title "Vaccinate goats", reminder_kind VACCINATION, GOAT, remind_at = the next Friday 08:00
 "How many birds died in September?" -> QUERY_HISTORY; history_topic DEATHS, POULTRY, period_start/period_end = September
 "When did I last vaccinate?" -> QUERY_HISTORY; history_topic TASKS
+"What did I sell last week?" -> QUERY_HISTORY; history_topic SALES, period_start/period_end = last week
+"What did I sell recently?" -> QUERY_HISTORY; history_topic SALES, no period
+"What did I buy this month?" -> QUERY_HISTORY; history_topic ANIMALS, period = this month
 "What did I tell you about the sick goats last week?" -> SEARCH_CONVERSATIONS; search_terms ["sick", "goats"]
 "Good morning" -> UNKNOWN
 """
