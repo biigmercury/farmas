@@ -47,6 +47,7 @@ class HealthInput(BaseModel):
     onset: Optional[str] = None
     drinking: Optional[str] = None
     vaccinated: Optional[str] = None
+    language: Optional[str] = None  # "pidgin" asks for the text fields in Nigerian Pidgin
 
 
 # ---------------------------------------------------------------------------------------------
@@ -111,7 +112,8 @@ Rules:
 6. Be conservative: when unsure between two risk levels, choose the higher one.
 7. Plain, short sentences, readable on a phone. No markdown, no emojis.
 8. If a photo is attached, mention only signs you can actually see, and say a photo cannot confirm a disease.
-9. If the farmer writes Pidgin, write the text fields in simple Nigerian Pidgin; otherwise simple English.
+9. If REPLY LANGUAGE says pidgin, or the farmer writes Pidgin, write the text fields in simple Nigerian Pidgin;
+   otherwise simple English.
 10. observations = a plain restatement of what the farmer reported (max 5). possible_concerns = max 4.
     recommended_actions = 3 to 5 safe steps. requires_vet_escalation = true for HIGH risk or any notifiable disease."""
 
@@ -125,6 +127,7 @@ def _facts(h: HealthInput) -> str:
         ("Started", h.onset),
         ("Drinking", h.drinking),
         ("Recently vaccinated", h.vaccinated),
+        ("REPLY LANGUAGE", h.language),
     ]
     return "\n".join(f"- {k}: {v}" for k, v in rows if v not in (None, ""))
 

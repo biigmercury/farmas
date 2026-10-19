@@ -64,7 +64,7 @@ async function health(farmId: string, range: Range, lang: Lang): Promise<string>
     return t(lang, `I have no health problems recorded for ${range.label}.`, `I no see any health problem for ${range.label}.`);
   const lines = rows
     .slice(0, MAX_ROWS)
-    .map((r) => `- ${lagosDateLong(r.createdAt)}: ${r.symptoms.slice(0, 90)} (${r.numberAffected} affected, ${r.mortality} died, risk ${r.riskLevel})`);
+    .map((r) => `- ${lagosDateLong(r.createdAt)}: ${r.symptoms.slice(0, 90)} (${t(lang, `${r.numberAffected} affected, ${r.mortality} died, risk ${r.riskLevel}`, `${r.numberAffected} dey sick, ${r.mortality} don die, risk ${r.riskLevel}`)})`);
   return [t(lang, `Health problems in ${range.label}:`, `Health wahala for ${range.label}:`), ...lines].join("\n") + more(rows.length, MAX_ROWS, lang);
 }
 
@@ -76,7 +76,13 @@ async function animalChanges(farmId: string, range: Range, type: LivestockType |
   if (rows.length === 0)
     return t(lang, `I have no animal changes recorded for ${range.label}.`, `I no see any animal change for ${range.label}.`);
   const word: Record<string, string> = {
-    PURCHASE: "bought", ADDED: "added", SALE: "sold", DEATH: "died", LOST: "lost or stolen", CONSUMED: "eaten at home", ADJUSTMENT: "adjusted",
+    PURCHASE: t(lang, "bought", "you buy"),
+    ADDED: t(lang, "added", "you add"),
+    SALE: t(lang, "sold", "you sell"),
+    DEATH: t(lang, "died", "die"),
+    LOST: t(lang, "lost or stolen", "lost or thief carry"),
+    CONSUMED: t(lang, "eaten at home", "una chop for house"),
+    ADJUSTMENT: t(lang, "adjusted", "we adjust"),
   };
   const lines = rows
     .slice(0, MAX_ROWS)
@@ -142,7 +148,7 @@ async function tasks(farmId: string, range: Range, lang: Lang): Promise<string> 
   });
   if (rows.length === 0)
     return t(lang, `I have no tasks or reminders for ${range.label}.`, `I no see any task or reminder for ${range.label}.`);
-  const lines = rows.slice(0, MAX_ROWS).map((r) => `- ${lagosDateLong(r.dueDate)}: ${r.title} (${r.status === "DONE" ? "done" : "waiting"})`);
+  const lines = rows.slice(0, MAX_ROWS).map((r) => `- ${lagosDateLong(r.dueDate)}: ${r.title} (${r.status === "DONE" ? t(lang, "done", "don do") : t(lang, "waiting", "dey wait")})`);
   return [t(lang, `Tasks and reminders for ${range.label}:`, `Tasks and reminders for ${range.label}:`), ...lines].join("\n") + more(rows.length, MAX_ROWS, lang);
 }
 

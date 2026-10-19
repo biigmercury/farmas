@@ -370,7 +370,7 @@ function askForMissing(intent: NluIntent, missing: string[], lang: Lang): string
   );
 }
 
-export function summarizeAction(data: ResolvedAction): string {
+export function summarizeAction(data: ResolvedAction, lang: Lang = "english"): string {
   const date = formatDate(data.date);
   const category = (data.category ?? "OTHER").toLowerCase().replace(/_/g, " ");
 
@@ -378,32 +378,69 @@ export function summarizeAction(data: ResolvedAction): string {
     case "CREATE_EXPENSE": {
       const extra =
         data.description && data.description.toLowerCase() !== category ? ` (${data.description})` : "";
-      return `you spent ${naira(data.amount ?? 0)} on ${category}${extra} on ${date}`;
+      return t(
+        lang,
+        `you spent ${naira(data.amount ?? 0)} on ${category}${extra} on ${date}`,
+        `you spend ${naira(data.amount ?? 0)} for ${category}${extra} for ${date}`
+      );
     }
-    case "CREATE_SALE":
-      return `you sold ${animals(data.livestockType, data.quantity ?? 0)} for ${naira(data.amount ?? 0)}${
-        data.buyer ? ` to ${data.buyer}` : ""
-      } on ${date}`;
-    case "CREATE_LIVESTOCK":
-      return `you bought ${animals(data.livestockType, data.quantity ?? 0)}${
-        data.amount && data.amount > 0 ? ` for ${naira(data.amount)}` : ""
-      }${data.name ? ` (${data.name})` : ""} on ${date}`;
-    case "CREATE_FEED_RECORD":
-      return `you used ${data.quantity ?? 0} unit(s) of ${data.feedType ?? "feed"}${
-        data.amount && data.amount > 0 ? ` worth ${naira(data.amount)}` : ""
-      } on ${date}`;
-    case "CREATE_HEALTH_RECORD":
-      return `you reported ${data.numberAffected ?? 1} animal(s) affected${
-        data.mortality ? ` (${data.mortality} dead)` : ""
-      }: ${data.symptoms?.join("; ") ?? "symptoms unclear"}`;
-    case "REMOVE_LIVESTOCK":
-      return `you want to remove ${animals(data.livestockType, data.quantity ?? 0)} (${
-        data.removeReason === "CONSUMED" ? "eaten or slaughtered at home" : "lost or stolen"
-      })`;
-    case "CREATE_REMINDER":
-      return `you want a reminder: "${data.reminderTitle ?? "Reminder"}" on ${data.remindAt ? lagosDateTime(data.remindAt) : "a day to be set"}`;
+    case "CREATE_SALE": {
+      const buyer = data.buyer ? ` to ${data.buyer}` : "";
+      return t(
+        lang,
+        `you sold ${animals(data.livestockType, data.quantity ?? 0)} for ${naira(data.amount ?? 0)}${buyer} on ${date}`,
+        `you sell ${animals(data.livestockType, data.quantity ?? 0)} for ${naira(data.amount ?? 0)}${buyer} for ${date}`
+      );
+    }
+    case "CREATE_LIVESTOCK": {
+      const cost = data.amount && data.amount > 0 ? ` for ${naira(data.amount)}` : "";
+      const name = data.name ? ` (${data.name})` : "";
+      return t(
+        lang,
+        `you bought ${animals(data.livestockType, data.quantity ?? 0)}${cost}${name} on ${date}`,
+        `you buy ${animals(data.livestockType, data.quantity ?? 0)}${cost}${name} for ${date}`
+      );
+    }
+    case "CREATE_FEED_RECORD": {
+      const worth = data.amount && data.amount > 0 ? ` worth ${naira(data.amount)}` : "";
+      return t(
+        lang,
+        `you used ${data.quantity ?? 0} unit(s) of ${data.feedType ?? "feed"}${worth} on ${date}`,
+        `you use ${data.quantity ?? 0} unit(s) of ${data.feedType ?? "feed"}${worth} for ${date}`
+      );
+    }
+    case "CREATE_HEALTH_RECORD": {
+      // The AI sometimes labels a plain death report "deaths": say that in the farmer's own style.
+      const onlyDeaths = data.symptoms?.length === 1 && data.symptoms[0].toLowerCase() === "deaths";
+      const symptoms = onlyDeaths
+        ? t(lang, "deaths", "dem die")
+        : data.symptoms?.join("; ") ?? t(lang, "symptoms unclear", "the symptoms no clear");
+      return t(
+        lang,
+        `you reported ${data.numberAffected ?? 1} animal(s) affected${data.mortality ? ` (${data.mortality} dead)` : ""}: ${symptoms}`,
+        `you report say ${data.numberAffected ?? 1} animal(s) dey sick${data.mortality ? ` (${data.mortality} don die)` : ""}: ${symptoms}`
+      );
+    }
+    case "REMOVE_LIVESTOCK": {
+      const how = data.removeReason === "CONSUMED"
+        ? t(lang, "eaten or slaughtered at home", "una chop dem for house")
+        : t(lang, "lost or stolen", "dem lost or thief carry dem");
+      return t(
+        lang,
+        `you want to remove ${animals(data.livestockType, data.quantity ?? 0)} (${how})`,
+        `you wan comot ${animals(data.livestockType, data.quantity ?? 0)} (${how})`
+      );
+    }
+    case "CREATE_REMINDER": {
+      const when = data.remindAt ? lagosDateTime(data.remindAt) : t(lang, "a day to be set", "day wey we never set");
+      return t(
+        lang,
+        `you want a reminder: "${data.reminderTitle ?? "Reminder"}" on ${when}`,
+        `you want make I remind you: "${data.reminderTitle ?? "Reminder"}" for ${when}`
+      );
+    }
     default:
-      return "you want to record something";
+      return t(lang, "you want to record something", "you want make I record something");
   }
 }
 
@@ -413,7 +450,9 @@ async function createPendingAction(
   nlu: NluResult,
   resolved: ResolvedAction
 ): Promise<string> {
-  const summary = summarizeAction(resolved);
+  // The stored summary stays English (it is a log line). The farmer sees the one written in their own style.
+  const summary = summarizeAction(resolved, "english");
+  const shown = summarizeAction(resolved, resolved.lang);
   const label = ACTION_LABELS[nlu.intent] ?? nlu.intent;
 
   await prisma.aiActionLog.updateMany({
@@ -435,8 +474,8 @@ async function createPendingAction(
 
   return t(
     resolved.lang,
-    `I understood that ${summary}. Should I save this? Reply "yes" to confirm, or "no" to cancel.`,
-    `I understood say ${summary}. Should I save this? Reply "yes" to confirm, or "no" to cancel.`
+    `I understood that ${shown}. Should I save this? Reply "yes" to confirm, or "no" to cancel.`,
+    `I don hear you: ${shown}. Make I save am? Reply "yes" or "no".`
   );
 }
 
@@ -559,9 +598,12 @@ export async function getPendingView(
 ): Promise<{ id: string; summary: string; intent: string } | null> {
   const pending = await getPendingAction(farmId);
   if (!pending) return null;
-  const replyLang =
-    forceLang ?? (pending.extractedEntities as { replyLang?: ReplyLang } | null)?.replyLang ?? DEFAULT_LANG;
-  const summary = pending.actionTaken.replace(/^Create [^:]+: /, "");
+  const resolved = pending.extractedEntities as unknown as ResolvedAction | null;
+  const replyLang = forceLang ?? resolved?.replyLang ?? DEFAULT_LANG;
+  // Build the summary again in the language shown, instead of reusing the English log line.
+  const summary = resolved
+    ? summarizeAction(resolved, baseLang(replyLang))
+    : pending.actionTaken.replace(/^Create [^:]+: /, "");
   return { id: pending.id, summary: await localize(summary, replyLang), intent: pending.detectedIntent };
 }
 
@@ -727,6 +769,7 @@ async function executeAction(
         numberAffected: data.numberAffected ?? 1,
         mortality: data.mortality ?? 0,
         species: data.livestockType?.toLowerCase(),
+        lang: data.lang,
       });
       return {
         id: result.record.id,

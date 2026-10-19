@@ -6,12 +6,15 @@ translation: the next step (intent extraction) works best on the original Pidgin
 """
 from __future__ import annotations
 
+import re
+
 from app import ai_client
 
 HINT = (
     "Voice message from a Nigerian livestock farmer, in Nigerian Pidgin, Nigerian English or Yoruba, Hausa or Igbo. "
     "Common words: abeg, dey, don, kpai, wetin, chop, na, dem, make. About broilers, goats, sheep, feed, naira, "
-    "50k, 200 birds. Write numbers as digits."
+    "50k, 200 birds. Write numbers as digits. All money is Nigerian naira (₦ or the word naira), never dollars: "
+    "do not use the $ sign."
 )
 
 # What the OpenAI transcription endpoint accepts. WhatsApp sends ogg (Opus); browsers record webm or mp4.
@@ -42,10 +45,21 @@ LANGUAGE_HINTS = {
 }
 
 
+_DOLLAR_SIGN = re.compile(r"(?:US\s?\$|\$)\s?(?=\d)")
+_DOLLAR_WORD = re.compile(r"(?<![A-Za-z])(?:US\s)?dollars?(?![A-Za-z])|(?<![A-Za-z])USD(?![A-Za-z])", re.I)
+
+
+def naira_only(text: str) -> str:
+    """Farm money is always Nigerian naira. The speech model sometimes writes "$300,000" or "300,000 dollars" for a
+    spoken "300k", so turn any dollar sign or word into naira before the farmer (and the AI) read it."""
+    text = _DOLLAR_SIGN.sub("₦", text)
+    return _DOLLAR_WORD.sub("naira", text)
+
+
 def transcribe(data: bytes, mime: str, language: str = "") -> str:
     ext = next((e for e, m in CANONICAL.items() if m == mime), "ogg")
     hint = f"{HINT} {LANGUAGE_HINTS[language]}" if language in LANGUAGE_HINTS else HINT
     text = ai_client.transcribe(
         data=data, filename=f"voice.{ext}", mime=mime, prompt=hint, language=LANGUAGE_CODES.get(language, "")
     )
-    return "" if text.lower() in {"[unclear]", ""} else text
+    return "" if text.lower() in {"[unclear]", ""} else naira_only(text)

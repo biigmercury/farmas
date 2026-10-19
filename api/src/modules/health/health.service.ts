@@ -7,7 +7,7 @@ import {
 import type { LivestockType } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { logger } from "../../utils/logger";
-import { animals } from "../../utils/lang";
+import { animals, t, type Lang } from "../../utils/lang";
 import { evaluateFarm, raiseAlert } from "../farm/alertEngine.service";
 import { adjustInventory, parseLivestockType } from "../farm/inventory.service";
 
@@ -23,25 +23,37 @@ export interface AssessInput {
   onset?: string;
   drinking?: string;
   vaccinated?: string;
+  /** The language style of the reply (English or Pidgin). */
+  lang?: Lang;
 }
 
-export function formatAssessment(assessment: HealthAssessment): string {
-  const lines: string[] = [`Risk level: ${assessment.risk_level}`];
+/** The fixed vet disclaimer, in Pidgin for a Pidgin reply. The meaning is the same; the English text is the official one. */
+export const PIDGIN_DISCLAIMER =
+  "FarmAs dey give AI help to decide wetin to do, but e no fit take the place of correct check from vet.";
+
+export function formatAssessment(assessment: HealthAssessment, lang: Lang = "english"): string {
+  const lines: string[] = [`${t(lang, "Risk level", "How serious e be")}: ${assessment.risk_level}`];
 
   if (assessment.observations.length > 0) {
-    lines.push("Observations:");
+    lines.push(`${t(lang, "Observations", "Wetin I see")}:`);
     for (const item of assessment.observations) lines.push(`- ${item}`);
   }
   if (assessment.possible_concerns.length > 0) {
-    lines.push("Possible concerns:");
+    lines.push(`${t(lang, "Possible concerns", "Wetin fit cause am")}:`);
     for (const item of assessment.possible_concerns) lines.push(`- ${item}`);
   }
   if (assessment.recommended_actions.length > 0) {
-    lines.push("Recommended actions:");
+    lines.push(`${t(lang, "Recommended actions", "Wetin you fit do now")}:`);
     for (const item of assessment.recommended_actions) lines.push(`- ${item}`);
   }
   if (assessment.requires_vet_escalation) {
-    lines.push("This one dey reach vet level — abeg contact your veterinarian.");
+    lines.push(
+      t(
+        lang,
+        "This needs a vet. Please contact your veterinarian.",
+        "This one dey reach vet level — abeg contact your veterinarian."
+      )
+    );
   }
 
   return lines.join("\n");
@@ -61,6 +73,7 @@ export async function assessAndRecord(
 }> {
   let assessment: HealthAssessment;
   let unavailable = false;
+  const lang: Lang = input.lang ?? "english";
 
   try {
     assessment = await mlClient.assess(input.symptoms, image, {
@@ -71,6 +84,7 @@ export async function assessAndRecord(
       onset: input.onset,
       drinking: input.drinking,
       vaccinated: input.vaccinated,
+      language: input.lang,
     });
   } catch (err) {
     if (!(err instanceof MlServiceError)) throw err;
@@ -81,7 +95,11 @@ export async function assessAndRecord(
       observations: [],
       possible_concerns: [],
       recommended_actions: [
-        "AI assessment no dey available right now. Make you book a vet to look at this case.",
+        t(
+          input.lang ?? "english",
+          "The AI assessment is not available right now. Please book a vet to look at this case.",
+          "AI assessment no dey available right now. Make you book a vet to look at this case."
+        ),
       ],
       requires_vet_escalation: true,
       disclaimer: DEFAULT_DISCLAIMER,
@@ -131,14 +149,22 @@ export async function assessAndRecord(
   }
 
   const body = unavailable
-    ? "AI assessment no dey available right now, but I don still save the record for manual review.\n\n" +
-      formatAssessment(assessment)
-    : formatAssessment(assessment);
+    ? t(
+        lang,
+        "The AI assessment is not available right now, but I still saved the record for review.\n\n",
+        "AI assessment no dey available right now, but I don still save the record for manual review.\n\n"
+      ) + formatAssessment(assessment, lang)
+    : formatAssessment(assessment, lang);
 
   const removedLine = inventory
-    ? `\n\nI also took ${animals(inventory.type, inventory.removed)} off your inventory (${inventory.remaining} left).`
+    ? t(
+        lang,
+        `\n\nI also took ${animals(inventory.type, inventory.removed)} off your inventory (${inventory.remaining} left).`,
+        `\n\nI don also comot ${animals(inventory.type, inventory.removed)} from your inventory (${inventory.remaining} remain).`
+      )
     : "";
-  const text = `${body}${removedLine}\n\n${assessment.disclaimer || DEFAULT_DISCLAIMER}`;
+  const disclaimer = lang === "pidgin" ? PIDGIN_DISCLAIMER : assessment.disclaimer || DEFAULT_DISCLAIMER;
+  const text = `${body}${removedLine}\n\n${disclaimer}`;
 
   return { record, assessment, unavailable, text, inventory };
 }

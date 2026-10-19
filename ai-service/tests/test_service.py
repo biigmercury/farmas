@@ -598,3 +598,45 @@ def test_chat_asks_for_the_chosen_nigerian_language(monkeypatch):
         r = client.post("/chat/answer", json={"message": "hello", "language": lang})
         assert r.status_code == 200
         assert word in seen["messages"][-1]["content"]
+
+
+# ---------- money in voice transcripts is always naira ----------------------------------------
+
+def test_naira_only_replaces_dollar_signs_and_words():
+    assert stt.naira_only("I sold 20 goats for $300,000") == "I sold 20 goats for ₦300,000"
+    assert stt.naira_only("I bought feed for US$ 50,000.") == "I bought feed for ₦50,000."
+    assert stt.naira_only("I paid 70,000 dollars for feed") == "I paid 70,000 naira for feed"
+    assert stt.naira_only("it cost 70 USD") == "it cost 70 naira"
+    assert stt.naira_only("I sold 20 goats for 150,000 naira") == "I sold 20 goats for 150,000 naira"  # already right
+    assert stt.naira_only("I spent ₦70,000") == "I spent ₦70,000"
+    assert stt.naira_only("a $ sign with no number") == "a $ sign with no number"
+
+
+def test_transcribe_endpoint_turns_a_dollar_transcript_into_naira(monkeypatch):
+    monkeypatch.setattr(ai_client, "transcribe", lambda **kw: "I bought 200 broilers for $300,000")
+    r = client.post("/stt/transcribe", files={"file": ("v.webm", b"abc", "audio/webm")})
+    assert r.json() == {"transcription": "I bought 200 broilers for ₦300,000"}
+
+
+def test_transcription_hint_says_money_is_naira(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(ai_client, "transcribe", lambda **kw: seen.update(kw) or "ok")
+    client.post("/stt/transcribe", files={"file": ("v.webm", b"abc", "audio/webm")})
+    assert "naira" in seen["prompt"] and "never dollars" in seen["prompt"]
+
+
+# ---------- Pidgin replies for the health check ----------------------------------------------
+
+def test_health_assess_passes_pidgin_to_the_model(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(ai_client, "generate_structured", lambda **kw: seen.update(kw) or _fake_assessment("MEDIUM"))
+    r = client.post("/health/assess", data={"symptoms": "goats dey cough", "language": "pidgin"})
+    assert r.status_code == 200
+    assert "REPLY LANGUAGE: pidgin" in seen["prompt"]
+
+
+def test_health_assess_without_a_language_stays_english(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(ai_client, "generate_structured", lambda **kw: seen.update(kw) or _fake_assessment("MEDIUM"))
+    client.post("/health/assess", data={"symptoms": "goats are coughing", "language": "english"})
+    assert "REPLY LANGUAGE" not in seen["prompt"]

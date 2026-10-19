@@ -88,6 +88,7 @@ async def health_assess(
     onset: Optional[str] = Form(None),
     drinking: Optional[str] = Form(None),
     vaccinated: Optional[str] = Form(None),
+    language: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
 ):
     media = None
@@ -102,6 +103,7 @@ async def health_assess(
     h = health.HealthInput(
         symptoms=symptoms, species=species, number_affected=number_affected, total=total,
         mortality=mortality, onset=onset, drinking=drinking, vaccinated=vaccinated,
+        language="pidgin" if (language or "").lower() == "pidgin" else None,
     )
     try:
         return health.assess(h, media)

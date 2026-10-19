@@ -89,11 +89,11 @@ export default function Landing() {
           <div className="relative mx-auto w-full max-w-sm space-y-3 pt-4" aria-label="Example conversation">
             <Bubble who="you" delay={600}>I don buy 200 broiler yesterday for 300k.</Bubble>
             <Bubble who="farmas" delay={1600}>
-              I understood: purchased <b>200 broilers</b> yesterday for <b>₦300,000</b>. Should I
-              save this?
+              I don hear you: you buy <b>200 broilers</b> yesterday for <b>₦300,000</b>. Make I save
+              am?
             </Bubble>
             <Bubble who="you" delay={2800}>Yes.</Bubble>
-            <Bubble who="farmas" delay={3600}>Done. Added to your farm records.</Bubble>
+            <Bubble who="farmas" delay={3600}>Done! I don add am to your farm records.</Bubble>
           </div>
           <dl className="relative mx-auto grid w-full max-w-sm grid-cols-2 gap-6 text-sm">
             <div>

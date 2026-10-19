@@ -64,6 +64,8 @@ export interface AssessContext {
   onset?: string;
   drinking?: string;
   vaccinated?: string;
+  /** "pidgin" asks for a Pidgin answer; omitted means English. */
+  language?: string;
 }
 
 export type MlService = "stt" | "nlu" | "health" | "chat" | "translate" | "tts";
@@ -241,6 +243,7 @@ export const mlClient = {
     put("onset", extra.onset);
     put("drinking", extra.drinking);
     put("vaccinated", extra.vaccinated);
+    put("language", extra.language);
     if (image) {
       form.append("image", new Blob([new Uint8Array(image.buffer)], { type: image.mimetype }), image.originalname);
     }
