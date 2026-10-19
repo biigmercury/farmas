@@ -742,6 +742,19 @@ this farmer's saved conversations.
 
 ---
 
+## Farmer survey (public)
+
+The website's `/survey` page lets farmers answer a short survey without an account.
+
+- `POST /api/survey/responses`: sends one set of answers. Body: `language` (`en`, `pg` or `yo`), `tried` (did they try the
+  demo), `consent: true` (required), `answers` (keys `q1` to `q16`, each with a fixed list of allowed values), and optional
+  `name`, `phone`, `contactOk`, `nameOk`. A hidden `website` field must stay empty (a trap for bots). Limited to 30 requests
+  per hour per connection.
+- `GET /api/survey/results` and `GET /api/survey/results.csv`: counts per question, the written answers and a spreadsheet of
+  everything. Team only: send the header `X-Survey-Key` with the value of `SURVEY_RESULTS_KEY`. Returns 503 until that key is set.
+
+---
+
 ## Health Triage
 
 Sends symptoms (and optionally a photo + affected/mortality counts) to the ML health-assess endpoint. Always creates a `HealthRecord`, appends a vet-disclaimer, and escalates to an `HEALTH_CLUSTER` alert when the modelled risk is high. If the ML service is down, it still records the event with `assessmentUnavailable: true` and a pointer to talk to a vet (never fabricated risk).

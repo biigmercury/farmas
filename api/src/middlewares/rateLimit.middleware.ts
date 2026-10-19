@@ -25,6 +25,13 @@ export const loginLimiter = limiter({
   message: "Too many login attempts. Please wait a few minutes and try again.",
 });
 
+/** The public farmer survey: a farmer only needs to send once, so 8 sends per hour per connection is plenty. Also guards the results key. */
+export const surveyLimiter = limiter({
+  windowMs: 60 * 60_000,
+  limit: 30,
+  message: "Too many requests from this connection. Please try again in a while.",
+});
+
 /** Mass sign-ups: 10 new accounts per hour per address. */
 export const registerLimiter = limiter({
   windowMs: 60 * 60_000,

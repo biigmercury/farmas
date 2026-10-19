@@ -65,6 +65,9 @@ services:
         sync: false
       - key: VAPID_SUBJECT
         value: https://farmas-six.vercel.app
+      # Secret key that opens the farmer-survey results page (team only). Any long random string.
+      - key: SURVEY_RESULTS_KEY
+        sync: false
       # Shared secret for the WhatsApp bridge (optional). Any long random string; the bridge's .env must match.
       - key: WHATSAPP_BRIDGE_KEY
         sync: false

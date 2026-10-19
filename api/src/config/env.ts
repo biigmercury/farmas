@@ -28,6 +28,8 @@ const envSchema = z.object({
   VAPID_SUBJECT: z.string().default("https://farmas-six.vercel.app"),
   // Shared secret for the WhatsApp bridge, so only it can collect the messages waiting to be sent.
   WHATSAPP_BRIDGE_KEY: z.string().default(""),
+  // The secret key that opens the survey results page (team only). Any long random string.
+  SURVEY_RESULTS_KEY: z.string().default(""),
   // How many proxies sit between the internet and this API (Render/Railway: 1; with Cloudflare in front: 2).
   // Unset = 1 in production, 0 locally.
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).optional(),

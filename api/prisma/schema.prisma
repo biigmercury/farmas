@@ -364,6 +364,25 @@ model OutboundMessage {
   @@index([sentAt, createdAt])
 }
 
+/// One farmer's answers to the public survey (/survey on the website). No login needed to send one.
+model SurveyResponse {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  /// The language the farmer used: en, pg (Pidgin) or yo (Yoruba)
+  language  String
+  /// Did they try the demo first: yes_fully, yes_little or no
+  tried     String?
+  /// The choice and written answers, keyed q1..q16
+  answers   Json
+  /// Optional contact details, kept only if the farmer chose to give them
+  name      String?
+  phone     String?
+  contactOk Boolean  @default(false)
+  nameOk    Boolean  @default(false)
+
+  @@index([createdAt])
+}
+
 /// One conversation with FarmAs AI. The farmer can reopen it from the History button.
 model ChatSession {
   id        String           @id @default(cuid())
