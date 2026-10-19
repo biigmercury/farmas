@@ -84,7 +84,6 @@ export async function assessAndRecord(
       onset: input.onset,
       drinking: input.drinking,
       vaccinated: input.vaccinated,
-      language: input.lang,
     });
   } catch (err) {
     if (!(err instanceof MlServiceError)) throw err;
@@ -148,13 +147,19 @@ export async function assessAndRecord(
     await evaluateFarm(farmId);
   }
 
+  // The AI writes the assessment in English (so the safety checks and wording stay reliable). For a Pidgin reply it is
+  // then translated as a separate step, which reads much more naturally than asking for Pidgin and JSON at once.
+  const assessmentText =
+    lang === "pidgin" && !unavailable
+      ? await mlClient.translate(formatAssessment(assessment, "english"), "pidgin")
+      : formatAssessment(assessment, lang);
   const body = unavailable
     ? t(
         lang,
         "The AI assessment is not available right now, but I still saved the record for review.\n\n",
         "AI assessment no dey available right now, but I don still save the record for manual review.\n\n"
-      ) + formatAssessment(assessment, lang)
-    : formatAssessment(assessment, lang);
+      ) + assessmentText
+    : assessmentText;
 
   const removedLine = inventory
     ? t(
